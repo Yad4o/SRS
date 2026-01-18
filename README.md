@@ -81,11 +81,9 @@ Copy code
 - Password hashing with bcrypt
 
 ---
-
 ## 📁 Project Structure
 
-The project follows a clean, layered architecture where each layer has a
-single responsibility.
+The project follows a clean, layered architecture where each layer has a single responsibility.
 
 app/
 ├── main.py # Application entry point
@@ -122,14 +120,14 @@ app/
 tests/ # Unit & integration tests
 workers/ # Background jobs (future use)
 
+markdown
+Copy code
 
-### Architecture Rule
-- **API layer** → orchestrates requests
-- **Service layer** → contains AI & business logic
-- **Models** → define database structure
-- **Schemas** → define request/response contracts
-
-
+### Architecture Rules
+- **API layer** handles HTTP and orchestration only  
+- **Service layer** contains AI and business logic  
+- **Models** define database structure  
+- **Schemas** define request/response contracts 
 ---
 
 ## 🔄 Ticket Lifecycle
