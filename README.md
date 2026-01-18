@@ -84,36 +84,51 @@ Copy code
 
 ## 📁 Project Structure
 
-app/
-├── main.py
-├── api/
-│ ├── auth.py
-│ ├── tickets.py
-│ ├── feedback.py
-│ └── admin.py
-├── core/
-│ ├── config.py
-│ └── security.py
-├── db/
-│ └── session.py
-├── models/
-│ ├── user.py
-│ ├── ticket.py
-│ └── feedback.py
-├── schemas/
-│ ├── user.py
-│ ├── ticket.py
-│ └── feedback.py
-├── services/
-│ ├── classifier.py
-│ ├── similarity.py
-│ ├── resolver.py
-│ └── decision.py
-tests/
-workers/
+The project follows a clean, layered architecture where each layer has a
+single responsibility.
 
-yaml
-Copy code
+app/
+├── main.py # Application entry point
+│
+├── api/ # HTTP API layer (FastAPI routes)
+│ ├── auth.py # Authentication endpoints
+│ ├── tickets.py # Ticket lifecycle APIs
+│ ├── feedback.py # Feedback submission APIs
+│ └── admin.py # Admin & metrics APIs
+│
+├── core/ # Core application utilities
+│ ├── config.py # Environment & app configuration
+│ └── security.py # JWT & password utilities
+│
+├── db/ # Database configuration
+│ └── session.py # SQLAlchemy engine & session
+│
+├── models/ # Database models (ORM)
+│ ├── user.py
+│ ├── ticket.py
+│ └── feedback.py
+│
+├── schemas/ # Pydantic schemas (API contracts)
+│ ├── user.py
+│ ├── ticket.py
+│ └── feedback.py
+│
+├── services/ # Business & AI logic (no FastAPI here)
+│ ├── classifier.py # Intent classification
+│ ├── similarity.py # Similar ticket search
+│ ├── resolver.py # Response generation
+│ └── decision.py # Auto-resolve vs escalation logic
+│
+tests/ # Unit & integration tests
+workers/ # Background jobs (future use)
+
+
+### Architecture Rule
+- **API layer** → orchestrates requests
+- **Service layer** → contains AI & business logic
+- **Models** → define database structure
+- **Schemas** → define request/response contracts
+
 
 ---
 
