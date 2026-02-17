@@ -1,54 +1,68 @@
-"""
-app/services/classifier.py
-
-Purpose:
---------
-Classifies customer support ticket messages into predefined intents.
-
-Owner:
-------
-Prajwal (AI / NLP)
-
-Responsibilities:
------------------
-- Analyze raw text input
-- Predict intent category
-- Return confidence score
-
-DO NOT:
--------
-- Access database here
-- Update ticket status here
-- Decide auto vs escalate here
-"""
-
+import re
 from typing import Dict
 
 
-def classify_intent(text: str) -> Dict[str, float | str]:
+def classify_intent(text: str) -> Dict[str, float]:
     """
-    Classify the intent of a support ticket message.
+    Classify user intent using rule-based keyword matching.
 
-    Input:
-    ------
-    text: str
-        Raw customer message
+    Args:
+        text (str): Raw user input text
 
-    Output:
-    -------
-    dict with keys:
-    - intent: predicted intent label
-    - confidence: confidence score (0.0 – 1.0)
-
-    TODO (Implementation Ideas):
-    ----------------------------
-    - Rule-based keywords (initial)
-    - spaCy text classification
-    - OpenAI prompt-based classification
+    Returns:
+        dict: {
+            "intent": str,
+            "confidence": float
+        }
     """
 
-    # TODO: Implement actual NLP logic
+    if not text or not isinstance(text, str):
+        return {
+            "intent": "unknown",
+            "confidence": 0.0
+        }
+
+    text = text.lower().strip()
+
+    # Clean text (remove special characters)
+    text = re.sub(r"[^a-z0-9\s]", "", text)
+
+    # -------- Intent Rules -------- #
+
+    intent_rules = {
+        "login_issue": [
+            "login", "sign in", "signin", "password", "otp", "cannot access"
+        ],
+        "payment_issue": [
+            "payment", "charged", "refund", "transaction", "money", "debit"
+        ],
+        "account_issue": [
+            "account", "profile", "deactivate", "delete account", "suspend"
+        ],
+        "technical_issue": [
+            "error", "bug", "crash", "not working", "issue", "problem"
+        ],
+        "feature_request": [
+            "feature", "add", "improve", "enhancement", "request"
+        ],
+        "general_query": [
+            "how", "what", "why", "can i", "help", "support"
+        ],
+    }
+
+    # -------- Matching Logic -------- #
+
+    for intent, keywords in intent_rules.items():
+        for keyword in keywords:
+            if keyword in text:
+                return {
+                    "intent": intent,
+                    "confidence": 0.8
+                }
+
+    # -------- Fallback -------- #
+
     return {
         "intent": "unknown",
-        "confidence": 0.0,
+        "confidence": 0.3
     }
