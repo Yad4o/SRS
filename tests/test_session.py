@@ -38,11 +38,13 @@ class TestGetDb:
         gen = get_db()
         db = next(gen)
         assert isinstance(db, Session)
+        assert db.is_active
         try:
             next(gen)
         except StopIteration:
             pass
         # Generator exhausted; finally block executes db.close()
+        assert not db.is_active
 
     def test_get_db_is_generator(self):
         """get_db should be a generator (for FastAPI Depends)."""

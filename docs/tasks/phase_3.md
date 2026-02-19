@@ -125,7 +125,7 @@ Wire the full AI pipeline into ticket creation. When a ticket is created via `PO
 
 ## Phase 3 Dependency Graph
 
-```
+```text
 3.1 classifier.py
     |
 3.2 similarity.py    3.3 resolver.py
