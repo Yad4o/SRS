@@ -24,16 +24,26 @@ DO NOT:
 """
 
 from functools import lru_cache
-from pydantic import BaseSettings
+
+from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 class Settings(BaseSettings):
     """
     Application settings loaded from environment variables.
 
-    This class uses Pydantic's BaseSettings to automatically
-    read values from a `.env` file or system environment.
+    Uses pydantic-settings to read values from a `.env` file
+    or system environment. Values are loaded once and cached.
+
+    Reference: docs/TECHNICAL_SPEC.md § 12. Configuration Management
     """
+
+    model_config = SettingsConfigDict(
+        env_file=".env",
+        env_file_encoding="utf-8",
+        case_sensitive=True,
+        extra="ignore",  # Ignore extra env vars to avoid validation errors
+    )
 
     # -------------------------------------------------
     # Application Settings
@@ -66,16 +76,19 @@ class Settings(BaseSettings):
     OPENAI_API_KEY: str | None = None
 
     # -------------------------------------------------
+    # Decision Engine (Technical Spec § 9.4)
+    # -------------------------------------------------
+    CONFIDENCE_THRESHOLD_AUTO_RESOLVE: float = 0.75
+    """
+    Minimum confidence score (0.0–1.0) to auto-resolve a ticket.
+    Below this threshold, tickets are escalated to human agents.
+    Safety-first: any uncertainty → escalate.
+    """
+
+    # -------------------------------------------------
     # Cache / Queue (Optional)
     # -------------------------------------------------
     REDIS_URL: str | None = None
-
-    class Config:
-        """
-        Pydantic configuration.
-        """
-        env_file = ".env"
-        case_sensitive = True
 
 
 @lru_cache
