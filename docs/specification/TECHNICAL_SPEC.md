@@ -57,9 +57,6 @@ This project is a collaborative effort with clear responsibility ownership.
 
 ---
 
-
----
-
 ## 1. Introduction
 
 ### 1.1 Purpose of This Document
@@ -372,8 +369,8 @@ This improves:
 Intent classification alone is not sufficient.
 
 Example:
-- Ticket A: “I cannot login to my account”
-- Ticket B: “Login not working since yesterday”
+- Ticket A: "I cannot login to my account"
+- Ticket B: "Login not working since yesterday"
 
 Both may map to `login_issue`, but the **exact resolution** might already
 exist for Ticket A.
@@ -418,7 +415,7 @@ that is sent back to the customer after analysis is complete.
 
 This component answers the question:
 
-> “What should the system say to the user?”
+> "What should the system say to the user?"
 
 It focuses on **clarity, correctness, and safety**, not on decision-making.
 

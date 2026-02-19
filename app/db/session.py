@@ -17,7 +17,7 @@ Responsibilities:
 - Provide FastAPI dependency (get_db) for per-request DB sessions
 - Provide init_db() to create tables on startup
 
-Reference: docs/TECHNICAL_SPEC.md § 5.3 Data Layer
+Reference: docs/specification/TECHNICAL_SPEC.md § 5.3 Data Layer
 
 DO NOT:
 -------

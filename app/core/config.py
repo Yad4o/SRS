@@ -35,7 +35,7 @@ class Settings(BaseSettings):
     Uses pydantic-settings to read values from a `.env` file
     or system environment. Values are loaded once and cached.
 
-    Reference: docs/TECHNICAL_SPEC.md § 12. Configuration Management
+    Reference: docs/specification/TECHNICAL_SPEC.md § 12. Configuration Management
     """
 
     model_config = SettingsConfigDict(
