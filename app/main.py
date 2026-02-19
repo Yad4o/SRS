@@ -21,8 +21,7 @@ from fastapi.middleware.cors import CORSMiddleware
 # TODO (later): import routers when they are implemented
 # from app.api import auth, tickets, feedback, admin
 
-# TODO (later): import settings
-# from app.core.config import settings
+from app.db.session import init_db
 
 
 def create_app() -> FastAPI:
@@ -103,11 +102,7 @@ def create_app() -> FastAPI:
         - Warm up AI models (optional)
         """
 
-        # TODO:
-        # - Initialize DB engine
-        # - Validate environment variables
-        # - Log startup success
-        pass
+        init_db()
 
     @app.on_event("shutdown")
     async def on_shutdown() -> None:
@@ -119,10 +114,9 @@ def create_app() -> FastAPI:
         - Gracefully stop background workers
         """
 
-        # TODO:
-        # - Close DB connections
-        # - Shutdown background tasks
-        pass
+        from app.db.session import engine
+
+        engine.dispose()
 
     return app
 
