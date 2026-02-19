@@ -57,26 +57,24 @@ class TestSettingsDefaults:
         assert s.AI_PROVIDER == "openai"
 
     def test_confidence_threshold_default(self):
-        """CONFIDENCE_THRESHOLD_AUTO_RESOLVE defaults to 0.75 if present (Technical Spec § 9.4)."""
+        """CONFIDENCE_THRESHOLD_AUTO_RESOLVE defaults to 0.75 (Technical Spec § 9.4)."""
         s = Settings(SECRET_KEY="x", DATABASE_URL="sqlite:///test.db")
-        if hasattr(s, "CONFIDENCE_THRESHOLD_AUTO_RESOLVE"):
-            assert s.CONFIDENCE_THRESHOLD_AUTO_RESOLVE == 0.75
+        assert s.CONFIDENCE_THRESHOLD_AUTO_RESOLVE == 0.75
 
     def test_confidence_threshold_in_valid_range(self):
-        """Confidence threshold should be between 0 and 1 when present."""
+        """Confidence threshold should be between 0 and 1."""
         s = Settings(SECRET_KEY="x", DATABASE_URL="sqlite:///test.db")
-        if hasattr(s, "CONFIDENCE_THRESHOLD_AUTO_RESOLVE"):
-            assert 0.0 <= s.CONFIDENCE_THRESHOLD_AUTO_RESOLVE <= 1.0
+        assert 0.0 <= s.CONFIDENCE_THRESHOLD_AUTO_RESOLVE <= 1.0
 
-    def test_optional_openai_key(self):
-        """OPENAI_API_KEY is optional (None or empty string)."""
+    def test_optional_openai_key_has_no_required_default(self):
+        """OPENAI_API_KEY is optional; when omitted it is None or empty string."""
         s = Settings(SECRET_KEY="x", DATABASE_URL="sqlite:///test.db")
-        assert s.OPENAI_API_KEY in (None, "") or isinstance(s.OPENAI_API_KEY, str)
+        assert s.OPENAI_API_KEY is None or s.OPENAI_API_KEY == ""
 
-    def test_optional_redis_url(self):
-        """REDIS_URL is optional (None or empty string)."""
+    def test_optional_redis_url_has_no_required_default(self):
+        """REDIS_URL is optional; when omitted it is None or empty string."""
         s = Settings(SECRET_KEY="x", DATABASE_URL="sqlite:///test.db")
-        assert s.REDIS_URL in (None, "") or isinstance(s.REDIS_URL, str)
+        assert s.REDIS_URL is None or s.REDIS_URL == ""
 
 
 class TestSettingsRequiredFields:
@@ -100,10 +98,10 @@ class TestSettingsOverride:
     """Tests for Settings override behavior."""
 
     def test_confidence_threshold_override(self):
-        """CONFIDENCE_THRESHOLD can be overridden when the field exists."""
-        kwargs = {"SECRET_KEY": "x", "DATABASE_URL": "sqlite:///test.db"}
-        if hasattr(Settings, "model_fields") and "CONFIDENCE_THRESHOLD_AUTO_RESOLVE" in Settings.model_fields:
-            kwargs["CONFIDENCE_THRESHOLD_AUTO_RESOLVE"] = 0.9
-        s = Settings(**kwargs)
-        if hasattr(s, "CONFIDENCE_THRESHOLD_AUTO_RESOLVE"):
-            assert s.CONFIDENCE_THRESHOLD_AUTO_RESOLVE == 0.9
+        """CONFIDENCE_THRESHOLD can be overridden."""
+        s = Settings(
+            SECRET_KEY="x",
+            DATABASE_URL="sqlite:///test.db",
+            CONFIDENCE_THRESHOLD_AUTO_RESOLVE=0.9,
+        )
+        assert s.CONFIDENCE_THRESHOLD_AUTO_RESOLVE == 0.9

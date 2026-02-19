@@ -12,7 +12,7 @@
 | **File to implement** | `app/services/classifier.py` |
 | **Cannot implement before** | None within Phase 3 (can use config if needed) |
 | **Owner** | Om |
-| **Blocks** | Task 3.4 (decision engine consumes confidence), Task 3.6 (wiring) |
+| **Blocks** | Task 3.4 (decision engine consumes confidence), Task 3.5 (wiring) |
 
 ### Description
 
@@ -35,7 +35,7 @@ Implement the intent classification service. Given a raw ticket message, the cla
 | **File to implement** | `app/services/similarity.py` |
 | **Cannot implement before** | None within Phase 3 |
 | **Owner** | Prajwal |
-| **Blocks** | Task 3.3 (resolver can use similar solution), Task 3.6 (wiring) |
+| **Blocks** | Task 3.3 (resolver can use similar solution), Task 3.5 (wiring) |
 
 ### Description
 
@@ -59,7 +59,7 @@ Implement similarity search to find previously resolved tickets that match a new
 | **File to implement** | `app/services/resolver.py` |
 | **Cannot implement before** | None within Phase 3 (pure function, no deps) |
 | **Owner** | Prajwal |
-| **Blocks** | Task 3.6 (wiring) |
+| **Blocks** | Task 3.5 (wiring) |
 
 ### Description
 
@@ -82,7 +82,7 @@ Implement response generation. Given intent, original message, and optionally a 
 | **File to implement** | `app/services/decision.py` |
 | **Cannot implement before** | Task 1.1 (`app/core/config.py`) — uses `CONFIDENCE_THRESHOLD_AUTO_RESOLVE` |
 | **Owner** | Om |
-| **Blocks** | Task 3.6 (wiring) |
+| **Blocks** | Task 3.5 (wiring) |
 
 ### Description
 

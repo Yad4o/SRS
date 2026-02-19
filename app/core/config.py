@@ -80,7 +80,7 @@ class Settings(BaseSettings):
     # -------------------------------------------------
     CONFIDENCE_THRESHOLD_AUTO_RESOLVE: float = 0.75
     """
-    Minimum confidence score (0.0–1.0) to auto-resolve a ticket.
+    Minimum confidence score (0.0-1.0) to auto-resolve a ticket.
     Below this threshold, tickets are escalated to human agents.
     Safety-first: any uncertainty → escalate.
     """

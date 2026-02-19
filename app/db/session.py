@@ -133,7 +133,7 @@ def init_db() -> None:
     Call this on application startup (e.g., in main.py on_event("startup")).
     Safe to call multiple times: creates only missing tables.
     """
-    # Import models so they register with Base.metadata
-    from app.models import feedback, ticket, user  # noqa: F401
+    # Import models so they register with Base.metadata (side-effect imports)
+    from app.models import feedback, ticket, user
 
     Base.metadata.create_all(bind=engine)

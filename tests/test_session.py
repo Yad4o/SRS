@@ -28,6 +28,10 @@ class TestGetDb:
         gen = get_db()
         db = next(gen)
         assert isinstance(db, Session)
+        try:
+            next(gen)
+        except StopIteration:
+            pass
 
     def test_get_db_closes_session_after_use(self):
         """get_db yields a session; exhausting the generator runs finally and closes it."""
