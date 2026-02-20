@@ -66,7 +66,7 @@ class TestSettingsDefaults:
         s = Settings(SECRET_KEY="x", DATABASE_URL="sqlite:///test.db")
         assert 0.0 <= s.CONFIDENCE_THRESHOLD_AUTO_RESOLVE <= 1.0
     
-    def test_confidence_threshold_out_of_range():
+    def test_confidence_threshold_out_of_range(self):
         with pytest.raises(ValueError):
             Settings(
                 SECRET_KEY="x",
@@ -88,7 +88,7 @@ class TestSettingsDefaults:
         s = Settings(SECRET_KEY="x", DATABASE_URL="sqlite:///test.db")
         assert isinstance(s.CORS_ORIGINS, list)
 
-    def test_new_config_defaults_smoke():
+    def test_new_config_defaults_smoke(self):
         s = Settings(SECRET_KEY="x", DATABASE_URL="sqlite:///test.db")
 
         assert s.DATABASE_POOL_SIZE == 5

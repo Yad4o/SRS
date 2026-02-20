@@ -33,18 +33,25 @@ class TestGetDb:
         except StopIteration:
             pass
 
-    def test_get_db_closes_session_after_use(self):
-        """get_db yields a session; exhausting the generator runs finally and closes it."""
+    def test_get_db_closes_session_after_use(self, monkeypatch):
+        closed = False
+
+        def fake_close(self):
+            nonlocal closed
+            closed = True
+
+        monkeypatch.setattr(Session, "close", fake_close)
+
         gen = get_db()
         db = next(gen)
         assert isinstance(db, Session)
-        assert db.is_active
+
         try:
             next(gen)
         except StopIteration:
             pass
-        # Generator exhausted; finally block executes db.close()
-        assert not db.is_active
+
+        assert closed is True
 
     def test_get_db_is_generator(self):
         """get_db should be a generator (for FastAPI Depends)."""

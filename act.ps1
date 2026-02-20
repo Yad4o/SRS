@@ -1,4 +1,4 @@
-# activate.ps1
+﻿# act.ps1
 $VenvPath = ".venv\Scripts\Activate.ps1"
 
 if (-Not (Test-Path $VenvPath)) {

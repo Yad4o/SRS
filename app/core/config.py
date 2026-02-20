@@ -52,13 +52,15 @@ class Settings(BaseSettings):
     ENV: str = "development"  # development | staging | production
     DEBUG: bool = True
     APP_VERSION: str = "1.0.0"
+
     # -------------------------------------------------
     # Security / Authentication
     # -------------------------------------------------
     SECRET_KEY: str
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 60
     ALGORITHM: str = "HS256"
-    CORS_ORIGINS: list[str] = ["*"]
+    CORS_ORIGINS: list[str] = []
+
     # -------------------------------------------------
     # Database
     # -------------------------------------------------
