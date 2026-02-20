@@ -9,7 +9,7 @@ Covers:
 - Decision engine threshold
 """
 import pytest
-
+from pydantic import ValidationError
 from app.core.config import Settings, get_settings
 
 
@@ -67,7 +67,7 @@ class TestSettingsDefaults:
         assert 0.0 <= s.CONFIDENCE_THRESHOLD_AUTO_RESOLVE <= 1.0
     
     def test_confidence_threshold_out_of_range(self):
-        with pytest.raises(ValueError):
+        with pytest.raises(ValidationError):
             Settings(
                 SECRET_KEY="x",
                 DATABASE_URL="sqlite:///test.db",
