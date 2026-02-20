@@ -26,7 +26,7 @@ DO NOT:
 from functools import lru_cache
 
 from pydantic_settings import BaseSettings, SettingsConfigDict
-
+from pydantic import field_validator
 
 class Settings(BaseSettings):
     """
@@ -51,14 +51,14 @@ class Settings(BaseSettings):
     APP_NAME: str = "Automated Customer Support Resolution System"
     ENV: str = "development"  # development | staging | production
     DEBUG: bool = True
-
+    APP_VERSION: str = "1.0.0"
     # -------------------------------------------------
     # Security / Authentication
     # -------------------------------------------------
     SECRET_KEY: str
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 60
     ALGORITHM: str = "HS256"
-
+    CORS_ORIGINS: list[str] = ["*"]
     # -------------------------------------------------
     # Database
     # -------------------------------------------------
@@ -68,13 +68,17 @@ class Settings(BaseSettings):
     - SQLite: sqlite:///./support.db
     - Postgres: postgresql://user:password@localhost/dbname
     """
+    DATABASE_POOL_SIZE: int = 5
+    DATABASE_MAX_OVERFLOW: int = 10
 
     # -------------------------------------------------
     # AI / NLP Configuration
     # -------------------------------------------------
     AI_PROVIDER: str = "openai"  # openai | spacy
     OPENAI_API_KEY: str | None = None
-
+    SIMILARITY_THRESHOLD: float = 0.7
+    MAX_SIMILAR_TICKETS_TO_CHECK: int = 100
+    
     # -------------------------------------------------
     # Decision Engine (Technical Spec § 9.4)
     # -------------------------------------------------
@@ -84,12 +88,31 @@ class Settings(BaseSettings):
     Below this threshold, tickets are escalated to human agents.
     Safety-first: any uncertainty → escalate.
     """
+    
+    @field_validator("CONFIDENCE_THRESHOLD_AUTO_RESOLVE")
+    @classmethod
+    def validate_confidence_threshold(cls, v: float):
+        if not 0.0 <= v <= 1.0:
+            raise ValueError(
+                "CONFIDENCE_THRESHOLD_AUTO_RESOLVE must be between 0.0 and 1.0"
+            )
+        return v
 
+    # -------------------------------------------------
+    # Logging & Monitoring
+    # -------------------------------------------------
+    LOG_LEVEL: str = "INFO"
+    SENTRY_DSN: str | None = None
+    
     # -------------------------------------------------
     # Cache / Queue (Optional)
     # -------------------------------------------------
     REDIS_URL: str | None = None
 
+    # -------------------------------------------------
+    # Rate Limiting
+    # -------------------------------------------------
+    RATE_LIMIT_PER_MINUTE: int = 60
 
 @lru_cache
 def get_settings() -> Settings:

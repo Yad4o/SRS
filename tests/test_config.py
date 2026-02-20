@@ -65,6 +65,14 @@ class TestSettingsDefaults:
         """Confidence threshold should be between 0 and 1."""
         s = Settings(SECRET_KEY="x", DATABASE_URL="sqlite:///test.db")
         assert 0.0 <= s.CONFIDENCE_THRESHOLD_AUTO_RESOLVE <= 1.0
+    
+    def test_confidence_threshold_out_of_range():
+        with pytest.raises(ValueError):
+            Settings(
+                SECRET_KEY="x",
+                DATABASE_URL="sqlite:///test.db",
+                CONFIDENCE_THRESHOLD_AUTO_RESOLVE=1.5,
+            )
 
     def test_optional_openai_key_has_no_required_default(self):
         """OPENAI_API_KEY is optional; when omitted it is None or empty string."""
@@ -76,6 +84,18 @@ class TestSettingsDefaults:
         s = Settings(SECRET_KEY="x", DATABASE_URL="sqlite:///test.db")
         assert s.REDIS_URL is None or s.REDIS_URL == ""
 
+    def test_cors_origins_default_is_list(self):
+        s = Settings(SECRET_KEY="x", DATABASE_URL="sqlite:///test.db")
+        assert isinstance(s.CORS_ORIGINS, list)
+
+    def test_new_config_defaults_smoke():
+        s = Settings(SECRET_KEY="x", DATABASE_URL="sqlite:///test.db")
+
+        assert s.DATABASE_POOL_SIZE == 5
+        assert s.DATABASE_MAX_OVERFLOW == 10
+        assert s.SIMILARITY_THRESHOLD == 0.7
+        assert s.MAX_SIMILAR_TICKETS_TO_CHECK == 100
+        assert s.RATE_LIMIT_PER_MINUTE == 60
 
 class TestSettingsRequiredFields:
     """Tests for Settings required fields."""
