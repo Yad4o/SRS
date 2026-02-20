@@ -644,16 +644,14 @@ pytest tests/integration/
 - **Multi-tenant Support**: SaaS deployment capabilities
 
 ---
-
 ## 👥 Development Team
 
 ### 🎯 Core Contributors
 
 | Name | Role | Expertise | Responsibilities |
 |------|------|-----------|------------------|
-| **Om Yadav** | **Backend Architect** | System Design, APIs, Security | Architecture, Database, Authentication, Documentation |
-| **Prajwal** | **AI/ML Engineer** | NLP, Machine Learning, Decision Systems | Intent Classification, Similarity Search, Response Generation |
-
+| **Om Yadav** | **AI/ML & Backend Engineer** | Machine Learning, System Design, APIs, Security | Model Integration, Backend Architecture, Authentication, Database Design, Documentation |
+| **Prajwal** | **AI/ML & Backend Engineer** | NLP, Machine Learning, Decision Systems, APIs | Intent Classification, Similarity Search, Model Development, Backend Logic, API Integration |
 ### 🤝 Collaboration Model
 
 - **Clean Architecture**: Modular design for parallel development
