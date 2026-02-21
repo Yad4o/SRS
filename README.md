@@ -220,7 +220,7 @@ response                 │ YES          │ NO
 ## 📁 Project Structure
 
 ```
-support-resolution-system/
+SRS/
 ├── 📄 README1.md                          # This comprehensive documentation
 ├── 📄 requirements.txt                     # Python dependencies
 ├── 📄 .env.example                        # Environment variables template
