@@ -78,7 +78,7 @@ Customer support teams face overwhelming volumes of repetitive issues—login pr
 
 ```
 ┌─────────────────────────────────────────┐
-│              Client Applications        │
+│         Client Applications        │
 └─────────────────┬───────────────────────┘
                   │
 ┌─────────────────▼───────────────────────┐
@@ -90,24 +90,87 @@ Customer support teams face overwhelming volumes of repetitive issues—login pr
                   │
 ┌─────────────────▼───────────────────────┐
 │         Service Layer (AI Core)         │
-│  • Intent Classification                 │
-│  • Similarity Search & Matching          │
-│  • Response Generation                   │
+│  • Intent Classification                │
+│  • Similarity Search & Matching         │
+│  • Response Generation                  │
 │  • Decision Engine (Safety Gate)        │
 └─────────────────┬───────────────────────┘
                   │
 ┌─────────────────▼───────────────────────┐
-│           Data Layer (ORM)               │
+│           Data Layer (ORM)              │
 │  • SQLAlchemy Models                    │
-│  • Database Session Management           │
+│  • Database Session Management          │
 │  • Data Validation & Transformation     │
 └─────────────────┬───────────────────────┘
                   │
 ┌─────────────────▼───────────────────────┐
-│            Database Layer                │
+│            Database Layer               │
 │  • SQLite (Development)                 │
 │  • PostgreSQL (Production)              │
 └─────────────────────────────────────────┘
+```
+
+## 🏗️ System Workflow
+
+```
+User submits ticket
+        │
+        ▼
+──────────────────────────
+Intent Classification
+- Detect intent
+- Compute confidence
+──────────────────────────
+        │
+        ▼
+──────────────────────────
+Decision Engine
+confidence ≥ 0.75 ?
+──────────────────────────
+        │
+ ┌──────┴───────────────┐
+ │ YES                  │ NO
+ ▼                      ▼
+AUTO_RESOLVE            ESCALATE
+ │                      │
+ │                      ▼
+ │            Fixed system message
+ │            ("Forwarded to agent")
+ │                      │
+ │                      ▼
+ │                END (Human takes over)
+ │
+ ▼
+──────────────────────────
+Similarity Search
+Resolved tickets exist
+AND similarity ≥ threshold?
+──────────────────────────
+        │
+ ┌──────┴───────────────┐
+ │ YES                  │ NO
+ ▼                      ▼
+Reuse response           Intent templates available?
+from database            (8–10 per intent)
+ │                      │
+ ▼                      ▼
+Send reused              ┌──────────────┐
+response                 │ YES          │ NO
+ │                       ▼              ▼
+ ▼                 Select template   OpenAI enabled?
+ END                     response         │
+                                          │
+                                   ┌──────┴──────────┐
+                                   │ YES              │ NO
+                                   ▼                  ▼
+                              OpenAI generates   Escalate to
+                              response wording   human agent
+                                   │
+                                   ▼
+                              Send response
+                                   │
+                                   ▼
+                                  END
 ```
 
 ### 🎯 Design Principles
@@ -239,21 +302,21 @@ support-resolution-system/
 ⚖️ Decision Engine
    • Evaluate confidence threshold
    • Make safety-first decision
-         │
-    ┌────┴────┐
-    │         │
-    ▼         ▼
-✅ AUTO_RESOLVE   ❌ ESCALATE
-(Confidence ≥ 0.75) (Confidence < 0.75)
-    │         │
-    ▼         ▼
-💬 Generate Response  👤 Assign Human Agent
-   │         │
-    ▼         ▼
-📝 Update Status     🔧 Manual Resolution
-   │         │
-    ▼         ▼
-⭐ Collect Feedback  ✅ Close Ticket
+                 │
+    ┌────────────┴───────────────┐
+    │                            │
+    ▼                            ▼
+✅ AUTO_RESOLVE           ❌ ESCALATE
+(Confidence ≥ 0.75)     (Confidence < 0.75)
+    │                            │
+    ▼                            ▼
+💬 Generate Response    👤 Assign Human Agent
+    │                            │
+    ▼                            ▼
+📝 Update Status        🔧 Manual Resolution
+    │                            │
+    ▼                            ▼
+⭐ Collect Feedback       ✅ Close Ticket
 ```
 
 ### 🎯 Decision Rules
@@ -467,8 +530,8 @@ Response:
 
 #### 1️⃣ Clone the Repository
 ```bash
-git clone https://github.com/your-username/support-resolution-system.git
-cd support-resolution-system
+git clone https://github.com/yad4o/SRS.git
+cd SRS
 ```
 
 #### 2️⃣ Create Virtual Environment
@@ -661,7 +724,7 @@ pytest tests/integration/
 
 ### 📧 Contact & Support
 
-- **Project Repository**: https://github.com/your-username/support-resolution-system
+- **Project Repository**: https://github.com/yad4o/SRS
 - **Documentation**: Comprehensive technical specs in `/docs/`
 - **Issues**: Bug reports and feature requests via GitHub Issues
 - **Discussions**: Community support and questions
