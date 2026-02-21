@@ -239,21 +239,21 @@ support-resolution-system/
 ⚖️ Decision Engine
    • Evaluate confidence threshold
    • Make safety-first decision
-         │
-    ┌────┴────┐
-    │         │
-    ▼         ▼
-✅ AUTO_RESOLVE   ❌ ESCALATE
-(Confidence ≥ 0.75) (Confidence < 0.75)
-    │         │
-    ▼         ▼
-💬 Generate Response  👤 Assign Human Agent
-   │         │
-    ▼         ▼
-📝 Update Status     🔧 Manual Resolution
-   │         │
-    ▼         ▼
-⭐ Collect Feedback  ✅ Close Ticket
+                 │
+    ┌────────────┴───────────────┐
+    │                            │
+    ▼                            ▼
+✅ AUTO_RESOLVE           ❌ ESCALATE
+(Confidence ≥ 0.75)     (Confidence < 0.75)
+    │                            │
+    ▼                            ▼
+💬 Generate Response    👤 Assign Human Agent
+    │                            │
+    ▼                            ▼
+📝 Update Status        🔧 Manual Resolution
+    │                            │
+    ▼                            ▼
+⭐ Collect Feedback       ✅ Close Ticket
 ```
 
 ### 🎯 Decision Rules
@@ -467,8 +467,8 @@ Response:
 
 #### 1️⃣ Clone the Repository
 ```bash
-git clone https://github.com/your-username/support-resolution-system.git
-cd support-resolution-system
+git clone https://github.com/yad4o/SRS.git
+cd SRS
 ```
 
 #### 2️⃣ Create Virtual Environment
@@ -661,7 +661,7 @@ pytest tests/integration/
 
 ### 📧 Contact & Support
 
-- **Project Repository**: https://github.com/your-username/support-resolution-system
+- **Project Repository**: https://github.com/yad4o/SRS
 - **Documentation**: Comprehensive technical specs in `/docs/`
 - **Issues**: Bug reports and feature requests via GitHub Issues
 - **Discussions**: Community support and questions
