@@ -110,6 +110,14 @@ Customer support teams face overwhelming volumes of repetitive issues—login pr
 └─────────────────────────────────────────┘
 ```
 
+### 🎯 Design Principles
+
+- **Separation of Concerns**: Each layer has single, clear responsibility
+- **API-First Backend**: Clean RESTful APIs with proper validation
+- **AI Logic Isolation**: Business logic separate from HTTP handling
+- **Safe Automation**: Conservative decision making with human fallback
+- **Testability**: Every component designed for comprehensive testing
+
 ## 🏗️ System Workflow
 
 ```
@@ -172,14 +180,6 @@ response                 │ YES          │ NO
                                    ▼
                                   END
 ```
-
-### 🎯 Design Principles
-
-- **Separation of Concerns**: Each layer has single, clear responsibility
-- **API-First Backend**: Clean RESTful APIs with proper validation
-- **AI Logic Isolation**: Business logic separate from HTTP handling
-- **Safe Automation**: Conservative decision making with human fallback
-- **Testability**: Every component designed for comprehensive testing
 
 ---
 
