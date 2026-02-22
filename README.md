@@ -78,7 +78,7 @@ Customer support teams face overwhelming volumes of repetitive issues—login pr
 
 ```
 ┌─────────────────────────────────────────┐
-│              Client Applications        │
+│         Client Applications        │
 └─────────────────┬───────────────────────┘
                   │
 ┌─────────────────▼───────────────────────┐
@@ -90,21 +90,21 @@ Customer support teams face overwhelming volumes of repetitive issues—login pr
                   │
 ┌─────────────────▼───────────────────────┐
 │         Service Layer (AI Core)         │
-│  • Intent Classification                 │
-│  • Similarity Search & Matching          │
-│  • Response Generation                   │
+│  • Intent Classification                │
+│  • Similarity Search & Matching         │
+│  • Response Generation                  │
 │  • Decision Engine (Safety Gate)        │
 └─────────────────┬───────────────────────┘
                   │
 ┌─────────────────▼───────────────────────┐
-│           Data Layer (ORM)               │
+│           Data Layer (ORM)              │
 │  • SQLAlchemy Models                    │
-│  • Database Session Management           │
+│  • Database Session Management          │
 │  • Data Validation & Transformation     │
 └─────────────────┬───────────────────────┘
                   │
 ┌─────────────────▼───────────────────────┐
-│            Database Layer                │
+│            Database Layer               │
 │  • SQLite (Development)                 │
 │  • PostgreSQL (Production)              │
 └─────────────────────────────────────────┘
@@ -117,6 +117,69 @@ Customer support teams face overwhelming volumes of repetitive issues—login pr
 - **AI Logic Isolation**: Business logic separate from HTTP handling
 - **Safe Automation**: Conservative decision making with human fallback
 - **Testability**: Every component designed for comprehensive testing
+
+## 🏗️ System Workflow
+
+```
+User submits ticket
+        │
+        ▼
+──────────────────────────
+Intent Classification
+- Detect intent
+- Compute confidence
+──────────────────────────
+        │
+        ▼
+──────────────────────────
+Decision Engine
+confidence ≥ 0.75 ?
+──────────────────────────
+        │
+ ┌──────┴───────────────┐
+ │ YES                  │ NO
+ ▼                      ▼
+AUTO_RESOLVE            ESCALATE
+ │                      │
+ │                      ▼
+ │            Fixed system message
+ │            ("Forwarded to agent")
+ │                      │
+ │                      ▼
+ │                END (Human takes over)
+ │
+ ▼
+──────────────────────────
+Similarity Search
+Resolved tickets exist
+AND similarity ≥ threshold?
+──────────────────────────
+        │
+ ┌──────┴───────────────┐
+ │ YES                  │ NO
+ ▼                      ▼
+Reuse response           Intent templates available?
+from database            (8–10 per intent)
+ │                      │
+ ▼                      ▼
+Send reused              ┌──────────────┐
+response                 │ YES          │ NO
+ │                       ▼              ▼
+ ▼                 Select template   OpenAI enabled?
+ END                     response         │
+                                          │
+                                   ┌──────┴──────────┐
+                                   │ YES              │ NO
+                                   ▼                  ▼
+                              OpenAI generates   Escalate to
+                              response wording   human agent
+                                   │
+                                   ▼
+                              Send response
+                                   │
+                                   ▼
+                                  END
+```
 
 ---
 
@@ -157,7 +220,7 @@ Customer support teams face overwhelming volumes of repetitive issues—login pr
 ## 📁 Project Structure
 
 ```
-support-resolution-system/
+SRS/
 ├── 📄 README1.md                          # This comprehensive documentation
 ├── 📄 requirements.txt                     # Python dependencies
 ├── 📄 .env.example                        # Environment variables template
