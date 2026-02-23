@@ -338,7 +338,6 @@ class TestDatabaseConnectionPool:
 class TestDatabaseSchemaValidation:
     """Essential tests for database schema and constraints."""
 
-    @pytest.mark.skipif(init_db is None, reason="init_db not available in this session.py")
     def test_foreign_key_query_parses(self):
         """Test that PRAGMA foreign_keys query works (doesn't verify enforcement)."""
         if "sqlite" not in str(engine.url):
