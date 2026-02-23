@@ -129,15 +129,28 @@ class TestEngine:
     def test_engine_has_correct_url(self):
         """Engine should use the DATABASE_URL from settings."""
         from app.core.config import get_settings
+        from urllib.parse import urlparse
         settings = get_settings()
         
-        # Sanitize URL to avoid leaking secrets in test output
-        engine_url = engine.url.render_as_string(hide_password=True)
-        settings_url = settings.DATABASE_URL
+        # Parse both URLs to compare components safely
+        settings_parsed = urlparse(settings.DATABASE_URL)
+        engine_parsed = engine.url
         
-        # Compare URL components without credentials
-        assert engine.url.drivername == settings.DATABASE_URL.split("://")[0]
-        assert engine.url.database or engine_url.endswith(settings_url.split("/")[-1])
+        # Compare driver/database type
+        assert engine_parsed.drivername == settings_parsed.scheme
+        
+        # Compare database name/path
+        if settings_parsed.path and settings_parsed.path != "/":
+            # Extract database name from path (remove leading slash)
+            settings_db_name = settings_parsed.path.lstrip('/')
+            if engine_parsed.database:
+                assert engine_parsed.database == settings_db_name
+            else:
+                # For SQLite, database might be in the host/path
+                assert settings_db_name in str(engine_parsed)
+        else:
+            # If no specific database in settings, ensure engine has one
+            assert engine_parsed.database is not None
 
     def test_engine_echo_in_debug_mode(self):
         """Engine should echo SQL when DEBUG is True."""
