@@ -38,6 +38,12 @@ class Ticket(Base):
 
     __tablename__ = "tickets"
 
+    def __init__(self, **kwargs):
+        """Initialize Ticket with default status if not provided."""
+        if 'status' not in kwargs:
+            kwargs['status'] = 'open'
+        super().__init__(**kwargs)
+
     # -------------------------------------------------
     # Columns
     # -------------------------------------------------
