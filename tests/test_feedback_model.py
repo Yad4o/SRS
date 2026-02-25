@@ -141,7 +141,6 @@ class TestFeedbackModel:
         """Feedback should have meaningful string representation."""
         feedback = Feedback(ticket_id=1, rating=5, resolved=True)
         
-<<<<<<< HEAD
         # Should have a meaningful __repr__ format
         repr_str = repr(feedback)
         assert "Feedback" in repr_str
@@ -173,11 +172,6 @@ class TestFeedbackModel:
             assert "ticket_id=" + str(ticket.id) in repr_str
             assert "rating=4" in repr_str
             assert "resolved=True" in repr_str
-=======
-        # Should be a valid object representation
-        str_repr = str(feedback)
-        assert "Feedback object" in str_repr
->>>>>>> 766109b04ef425b005d195694752a94f13250f37
 
     def test_feedback_database_persistence(self):
         """Should persist feedback to database correctly."""
@@ -247,21 +241,17 @@ class TestFeedbackModel:
     def test_feedback_foreign_key_constraint(self):
         """Should enforce foreign key constraint to tickets table."""
         with Session(engine) as db:
-            # Note: SQLite doesn't enforce foreign key constraints by default
-            # This test verifies the foreign key is properly defined
+            # Enable foreign key constraint enforcement in SQLite
+            from sqlalchemy import text
+            db.execute(text("PRAGMA foreign_keys = ON"))
+            
+            # Try to create feedback with non-existent ticket_id
             feedback = Feedback(ticket_id=99999, rating=5, resolved=True)
             db.add(feedback)
             
-            # In SQLite, foreign key constraints are not enforced by default
-            # but the relationship is still properly defined
-            db.commit()
-            
-            # Verify the feedback was created (SQLite behavior)
-            assert feedback.id is not None
-            
-            # Clean up
-            db.delete(feedback)
-            db.commit()
+            # Should raise integrity error due to foreign key constraint
+            with pytest.raises(sqlalchemy_exc.IntegrityError):
+                db.commit()
 
     def test_feedback_query_by_rating(self):
         """Should be able to query feedback by rating."""
@@ -408,21 +398,14 @@ class TestFeedbackModelIntegration:
             assert tables[0][0] == 'feedback'
 
     def test_foreign_key_constraint_in_database(self):
-        """Database should have proper table structure with ticket_id column."""
+        """Database should enforce foreign key constraints when enabled."""
         with Session(engine) as db:
-            # Note: SQLite doesn't enforce foreign key constraints by default
-            # This test verifies the table structure is correct
+            # Enable foreign key constraint enforcement in SQLite
             from sqlalchemy import text
-            result = db.execute(text("PRAGMA table_info(feedback)"))
-            columns = result.fetchall()
+            db.execute(text("PRAGMA foreign_keys = ON"))
             
-            # Find the ticket_id column
-            ticket_id_col = None
-            for col in columns:
-                if col[1] == 'ticket_id':  # column name
-                    ticket_id_col = col
-                    break
-            
-            assert ticket_id_col is not None, "ticket_id column not found"
-            assert ticket_id_col[2] == 'INTEGER', "ticket_id should be INTEGER type"
-            assert ticket_id_col[3] == 1, "ticket_id should be NOT NULL"
+            # Try to insert feedback with invalid ticket_id
+            with pytest.raises((sqlalchemy_exc.IntegrityError, sqlalchemy_exc.StatementError)):
+                db.execute(text("INSERT INTO feedback (ticket_id, rating, resolved) VALUES (:ticket_id, :rating, :resolved)"), 
+                         {"ticket_id": 99999, "rating": 5, "resolved": True})
+                db.commit()
