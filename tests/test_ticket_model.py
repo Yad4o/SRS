@@ -185,15 +185,11 @@ class TestTicketModel:
         """Should enforce not null constraint on status at database level."""
         with Session(engine) as db:
             # Test database constraint by directly inserting NULL
-            try:
+            with pytest.raises((sqlalchemy_exc.IntegrityError, sqlalchemy_exc.StatementError)):
                 from sqlalchemy import text
                 db.execute(text("INSERT INTO tickets (message, status) VALUES (:message, :status)"), 
                          {"message": "Test message", "status": None})
                 db.commit()
-                assert False, "Should have raised an integrity error"
-            except (sqlalchemy_exc.IntegrityError, sqlalchemy_exc.StatementError):
-                # Expected behavior - database enforces NOT NULL constraint
-                pass
 
     def test_ticket_query_by_status(self):
         """Should be able to query tickets by status."""
