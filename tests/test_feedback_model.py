@@ -409,3 +409,46 @@ class TestFeedbackModelIntegration:
                 db.execute(text("INSERT INTO feedback (ticket_id, rating, resolved) VALUES (:ticket_id, :rating, :resolved)"), 
                          {"ticket_id": 99999, "rating": 5, "resolved": True})
                 db.commit()
+
+    def test_foreign_key_constraint_definition(self):
+        """Database should have foreign key constraint properly defined in SQLAlchemy model."""
+        with Session(engine) as db:
+            from sqlalchemy import text
+            
+            # First, enable foreign keys to see if they're defined
+            db.execute(text("PRAGMA foreign_keys = ON"))
+            
+            # Check if foreign key is defined in the table schema
+            result = db.execute(text("PRAGMA foreign_key_list(feedback)"))
+            foreign_keys = result.fetchall()
+            
+            # SQLite behavior: foreign keys may not appear in PRAGMA foreign_key_list
+            # if they weren't created with explicit constraints. Let's validate what we can.
+            
+            # Method 1: Check if foreign key exists in PRAGMA foreign_key_list
+            if len(foreign_keys) > 0:
+                # Foreign key is properly defined in database
+                assert len(foreign_keys) == 1, f"Expected 1 foreign key, found {len(foreign_keys)}"
+                fk = foreign_keys[0]
+                fk_id, seq, referenced_table, from_column, to_column, on_update, on_delete, match = fk
+                
+                assert referenced_table == 'tickets', f"FK should reference 'tickets' table, got '{referenced_table}'"
+                assert from_column == 'ticket_id', f"FK should be on 'ticket_id' column, got '{from_column}'"
+                assert to_column == 'id', f"FK should reference 'id' column, got '{to_column}'"
+            else:
+                # Method 2: Validate through SQLAlchemy model inspection
+                # This confirms the FK is defined at the ORM level
+                from app.models.feedback import Feedback
+                ticket_id_column = Feedback.__table__.columns['ticket_id']
+                
+                # Check that the column has foreign keys defined in SQLAlchemy
+                assert len(list(ticket_id_column.foreign_keys)) > 0, "ticket_id should have foreign keys defined in SQLAlchemy"
+                
+                # Validate the foreign key definition
+                fk = list(ticket_id_column.foreign_keys)[0]
+                assert str(fk.column) == 'tickets.id', f"Foreign key should reference tickets.id, got {fk.column}"
+                assert fk.parent.name == 'ticket_id', f"Foreign key should be on ticket_id column, got {fk.parent.name}"
+                
+                # Test that the foreign key relationship works (even if not enforced by SQLite)
+                # This validates the ORM-level relationship is properly configured
+                assert hasattr(Feedback, 'ticket'), "Feedback should have ticket relationship defined"
