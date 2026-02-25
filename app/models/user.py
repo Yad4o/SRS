@@ -38,6 +38,12 @@ class User(Base):
 
     __tablename__ = "users"
 
+    def __init__(self, **kwargs):
+        """Initialize User with default role if not provided."""
+        if 'role' not in kwargs:
+            kwargs['role'] = 'user'
+        super().__init__(**kwargs)
+
     # -------------------------------------------------
     # Columns
     # -------------------------------------------------
