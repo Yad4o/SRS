@@ -20,6 +20,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 # TODO (later): import routers when they are implemented
 # from app.api import auth, tickets, feedback, admin
+from app.api import demo
 
 from app.db.session import init_db
 
@@ -86,6 +87,9 @@ def create_app() -> FastAPI:
     # app.include_router(tickets.router, prefix="/tickets", tags=["Tickets"])
     # app.include_router(feedback.router, prefix="/feedback", tags=["Feedback"])
     # app.include_router(admin.router, prefix="/admin", tags=["Admin"])
+    
+    # Demo endpoints for viewing database data
+    app.include_router(demo.router, prefix="/demo", tags=["Demo"])
 
     # --------------------------------------------------
     # Application Lifecycle Events
