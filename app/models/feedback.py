@@ -22,7 +22,7 @@ DO NOT:
 - Implement business logic here
 """
 
-from datetime import datetime
+from datetime import datetime, timezone
 from sqlalchemy import Column, Integer, Boolean, DateTime, ForeignKey
 from sqlalchemy.orm import relationship
 
@@ -75,7 +75,7 @@ class Feedback(Base):
 
     created_at = Column(
         DateTime,
-        default=datetime.utcnow,
+        default=lambda: datetime.now(timezone.utc),
         nullable=False,
         doc="Timestamp when feedback was submitted",
     )
