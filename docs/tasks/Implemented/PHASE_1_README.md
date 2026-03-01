@@ -77,7 +77,7 @@ This document provides a comprehensive, line-by-line explanation of every file i
 - **`intent = Column(String, nullable=True, ...)`**: The string category that the AI model determines (e.g., `'refund_request'`) after analyzing the message.
 - **`confidence = Column(Float, nullable=True, ...)`**: The numeric certainty (0.00 to 1.00) outputted by the AI model corresponding to the predicted intent.
 - **`status = Column(String, default="open", nullable=False, ...)`**: The lifecycle state of the ticket: `open`, `auto_resolved`, `escalated`, or `closed`.
-- **`created_at = Column(DateTime, default=datetime.utcnow, nullable=False, ...)`**: Tracks exactly when the user submitted the query. Uses `datetime.utcnow` as a function reference so it computes the current time at the moment of insertion.
+- **`created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc), nullable=False, ...)`**: Tracks exactly when the user submitted the query. Uses a lambda function returning `datetime.now(timezone.utc)` to securely compute the exact timezone-aware UTC time at the moment of insertion (Python 3.12+ compatible).
 
 ---
 
@@ -92,6 +92,7 @@ This document provides a comprehensive, line-by-line explanation of every file i
 - **`rating = Column(Integer, nullable=False, ...)`**: The numeric star-rating (e.g. 1 to 5) provided by the user.
 - **`resolved = Column(Boolean, nullable=False, ...)`**: A boolean flag indicating whether the user actually felt their issue was fixed.
 - **`ticket = relationship("Ticket", backref="feedback")`**: An ORM-level link. This allows us to do things like `my_feedback.ticket.message` or `my_ticket.feedback[0].rating` easily in Python without writing manual SQL JOINs.
+- *Note: `created_at` in this table also uses the timezone-aware `datetime.now(timezone.utc)` lambda strategy for Python 3.12+.*
 
 ---
 

@@ -22,7 +22,7 @@ DO NOT:
 - Write database queries here
 """
 
-from datetime import datetime
+from datetime import datetime, timezone
 from sqlalchemy import Column, Integer, String, Float, DateTime
 
 from app.db.session import Base
@@ -82,7 +82,7 @@ class Ticket(Base):
 
     created_at = Column(
         DateTime,
-        default=datetime.utcnow,
+        default=lambda: datetime.now(timezone.utc),
         nullable=False,
         doc="Timestamp when the ticket was created",
     )
