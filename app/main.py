@@ -114,6 +114,9 @@ def create_app() -> FastAPI:
     # app.include_router(tickets.router, prefix="/tickets", tags=["Tickets"])
     # app.include_router(feedback.router, prefix="/feedback", tags=["Feedback"])
     # app.include_router(admin.router, prefix="/admin", tags=["Admin"])
+    
+    # Demo endpoints for viewing database data
+    app.include_router(demo.router, tags=["Demo"])
 
     # Demo endpoints — only mount in non-production environments.
     # Set ENV=production in your environment to disable these routes.
