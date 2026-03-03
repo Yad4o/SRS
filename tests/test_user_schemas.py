@@ -25,9 +25,9 @@ class TestUserLogin:
 
     def test_userlogin_valid(self):
         """Should create a valid UserLogin with email and password."""
-        schema = UserLogin(email="user@example.com", password="secret123")
+        schema = UserLogin(email="user@example.com", password="Password123!")
         assert schema.email == "user@example.com"
-        assert schema.password == "secret123"
+        assert schema.password == "Password123!"
 
     def test_userlogin_email_is_validated(self):
         """Invalid email should raise ValidationError."""
@@ -47,7 +47,7 @@ class TestUserLogin:
     def test_userlogin_email_field_type(self):
         """Email field should be stored as a string (EmailStr serialises to str)."""
         schema = UserLogin(email="user@example.com", password="pass")
-        assert isinstance(str(schema.email), str)
+        assert isinstance(schema.email, str)
 
     def test_userlogin_password_can_be_any_string(self):
         """Password accepts any non-null string (no length restriction at schema level)."""
@@ -61,10 +61,10 @@ class TestUserLogin:
         assert fields == {"email", "password"}
 
     def test_userlogin_accepts_mixed_case_email(self):
-        """Pydantic v2 EmailStr validates format but does not normalise case."""
+        """Pydantic v2 EmailStr validates format but normalizes domain case."""
         schema = UserLogin(email="User@Example.COM", password="pass")
-        # EmailStr validates but preserves the original casing
-        assert "@" in str(schema.email)
+        # EmailStr normalizes domain to lowercase but preserves local part case
+        assert str(schema.email) == "User@example.com"
 
 
 # =============================================================================
@@ -77,9 +77,9 @@ class TestUserCreate:
 
     def test_usercreate_valid(self):
         """Should create a valid UserCreate with email and password."""
-        schema = UserCreate(email="newuser@example.com", password="mypassword")
+        schema = UserCreate(email="newuser@example.com", password="Password123!")
         assert schema.email == "newuser@example.com"
-        assert schema.password == "mypassword"
+        assert schema.password == "Password123!"
 
     def test_usercreate_invalid_email_raises(self):
         """Invalid email should raise ValidationError."""
@@ -98,14 +98,49 @@ class TestUserCreate:
 
     def test_usercreate_has_only_expected_fields(self):
         """UserCreate should only expose email and password."""
-        schema = UserCreate(email="newuser@example.com", password="pass")
+        schema = UserCreate(email="newuser@example.com", password="Password123!")
         fields = set(schema.model_fields.keys())
         assert fields == {"email", "password"}
 
     def test_usercreate_accepts_mixed_case_email(self):
-        """Pydantic v2 EmailStr validates format but does not normalise case."""
-        schema = UserCreate(email="New@Example.COM", password="pass")
-        assert "@" in str(schema.email)
+        """Pydantic v2 EmailStr validates format but normalizes domain case."""
+        schema = UserCreate(email="New@Example.COM", password="Pass123!")
+        # EmailStr normalizes domain to lowercase but preserves local part case
+        assert str(schema.email) == "New@example.com"
+
+
+class TestUserCreateComplexity:
+    """Tests for UserCreate password complexity validation."""
+
+    def test_password_min_length(self):
+        """Password must be at least 8 characters."""
+        with pytest.raises(ValidationError, match="at least 8 characters"):
+            UserCreate(email="u@e.com", password="P1a!567")
+
+    def test_password_uppercase_required(self):
+        """Password must have at least one uppercase letter."""
+        with pytest.raises(ValidationError, match="at least one uppercase"):
+            UserCreate(email="u@e.com", password="p1a!5678")
+
+    def test_password_lowercase_required(self):
+        """Password must have at least one lowercase letter."""
+        with pytest.raises(ValidationError, match="at least one lowercase"):
+            UserCreate(email="u@e.com", password="P1A!5678")
+
+    def test_password_digit_required(self):
+        """Password must have at least one digit."""
+        with pytest.raises(ValidationError, match="at least one digit"):
+            UserCreate(email="u@e.com", password="Paa!bcde")
+
+    def test_password_special_char_required(self):
+        """Password must have at least one special character."""
+        with pytest.raises(ValidationError, match="at least one special character"):
+            UserCreate(email="u@e.com", password="P1abcde2")
+
+    def test_password_valid_complexity(self):
+        """Should accept a password that meets all complexity rules."""
+        schema = UserCreate(email="u@e.com", password="Password123!")
+        assert schema.password == "Password123!"
 
 
 # =============================================================================
@@ -164,15 +199,11 @@ class TestUserResponse:
 
     def test_userresponse_orm_mode_enabled(self):
         """
-        UserResponse must have ORM mode enabled so SQLAlchemy
-        model instances can be passed directly.
+        UserResponse must have from_attributes enabled (Pydantic v2)
+        so SQLAlchemy models can be serialised directly.
         """
         config = UserResponse.model_config
-        # Pydantic v2: from_attributes=True; v1 compat: orm_mode=True
-        # The Config class sets orm_mode = True which maps to from_attributes
-        assert config.get("from_attributes") is True or getattr(
-            getattr(UserResponse, "Config", None), "orm_mode", False
-        )
+        assert config.get("from_attributes") is True
 
     def test_userresponse_from_orm_object(self):
         """
