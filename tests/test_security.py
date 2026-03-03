@@ -98,6 +98,13 @@ class TestPasswordHashing:
         assert isinstance(result_true, bool)
         assert isinstance(result_false, bool)
 
+    def test_verify_password_malformed_hash_returns_false(self):
+        """verify_password must fail-closed (return False) instead of raising an exception on malformed hashes."""
+        plain = "testpassword"
+        malformed_hash = "not-a-bcrypt-hash"
+        # Should return False without raising any exceptions
+        assert verify_password(plain, malformed_hash) is False
+
 
 # =============================================================================
 # JWT Token Tests
