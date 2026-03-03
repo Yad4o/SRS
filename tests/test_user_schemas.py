@@ -9,6 +9,7 @@ Covers:
 - UserResponse schema: field presence, ORM mode, no password fields
 - Token schema: default token_type, field presence, types
 """
+# ruff: noqa: S105,S106
 import pytest
 from pydantic import ValidationError
 
