@@ -23,7 +23,7 @@ DO NOT:
 """
 
 from pydantic import BaseModel, ConfigDict
-from typing import Optional
+from typing import Optional, List
 from datetime import datetime
 
 
@@ -81,3 +81,23 @@ class TicketResponse(BaseModel):
     created_at: datetime
 
     model_config = ConfigDict(from_attributes=True)
+
+
+# Alias for TicketResponse as specified in deliverables
+TicketRead = TicketResponse
+
+
+class TicketList(BaseModel):
+    """
+    Schema returned when fetching a list of tickets.
+
+    Used in:
+    --------
+    GET /tickets
+
+    Fields:
+    -------
+    - tickets: List of TicketResponse objects
+    """
+
+    tickets: List[TicketResponse]
