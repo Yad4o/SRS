@@ -65,7 +65,9 @@ def authenticate_user(db: Session, email: str, password: str) -> User | None:
         User object if authentication successful, None otherwise
     """
     try:
-        user = db.query(User).filter(User.email.ilike(email)).first()
+        # Normalize email to lowercase for consistent storage and lookup
+        normalized_email = email.strip().lower()
+        user = db.query(User).filter(User.email == normalized_email).first()
         if not user:
             return None
         if not verify_password(password, user.hashed_password):
@@ -93,8 +95,12 @@ def create_user(db: Session, user_create: UserCreate) -> User:
     try:
         hashed_password = hash_password(user_create.password)
         default_role = getattr(settings, 'DEFAULT_USER_ROLE', 'user')
+        
+        # Normalize email to lowercase for consistent storage and uniqueness
+        normalized_email = user_create.email.strip().lower()
+        
         db_user = User(
-            email=user_create.email,
+            email=normalized_email,
             hashed_password=hashed_password,
             role=default_role
         )

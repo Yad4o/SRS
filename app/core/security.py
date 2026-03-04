@@ -64,9 +64,12 @@ def hash_password(plain_password: str) -> str:
     Reference: Technical Spec § 10.2 (Password Handling)
     """
     # bcrypt has a 72-byte limit for passwords
-    # Truncate if necessary to prevent errors
-    if len(plain_password.encode('utf-8')) > 72:
-        plain_password = plain_password[:72]
+    # Use byte-based slicing to handle multibyte UTF-8 characters correctly
+    password_bytes = plain_password.encode('utf-8')
+    if len(password_bytes) > 72:
+        # Take first 72 bytes and decode, ignoring incomplete trailing sequences
+        password_bytes = password_bytes[:72]
+        plain_password = password_bytes.decode('utf-8', errors='ignore')
     return pwd_context.hash(plain_password)
 
 
@@ -87,9 +90,12 @@ def verify_password(plain_password: str, hashed_password: str) -> bool:
     """
     try:
         # bcrypt has a 72-byte limit for passwords
-        # Truncate if necessary to match hashing behavior
-        if len(plain_password.encode('utf-8')) > 72:
-            plain_password = plain_password[:72]
+        # Use byte-based slicing to handle multibyte UTF-8 characters correctly
+        password_bytes = plain_password.encode('utf-8')
+        if len(password_bytes) > 72:
+            # Take first 72 bytes and decode, ignoring incomplete trailing sequences
+            password_bytes = password_bytes[:72]
+            plain_password = password_bytes.decode('utf-8', errors='ignore')
         return pwd_context.verify(plain_password, hashed_password)
     except Exception:
         return False
