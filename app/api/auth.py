@@ -29,6 +29,7 @@ References:
 - Task 2.2 (User Schemas)
 """
 
+import re
 from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.security import OAuth2PasswordBearer
 from sqlalchemy.orm import Session
@@ -39,7 +40,7 @@ from jose import JWTError
 import logging
 
 from app.core.security import verify_password, create_access_token, hash_password, decode_token
-from app.core.config import settings
+from app.core.config import settings, ALLOWED_ROLES
 from app.db.session import get_db
 from app.models.user import User
 from app.schemas.user import UserLogin, UserCreate, UserResponse, Token
@@ -49,16 +50,26 @@ oauth2_scheme = OAuth2PasswordBearer(tokenUrl="auth/login")
 
 router = APIRouter(prefix="/auth", tags=["Authentication"])
 
-# Configure logger with proper formatting
+# Configure logger
 logger = logging.getLogger(__name__)
-if not logger.handlers:
-    handler = logging.StreamHandler()
-    formatter = logging.Formatter(
-        '%(asctime)s - %(name)s - %(levelname)s - %(message)s'
-    )
-    handler.setFormatter(formatter)
-    logger.addHandler(handler)
-    logger.setLevel(getattr(logging, settings.LOG_LEVEL.upper(), logging.INFO))
+
+
+def is_valid_email(email: str) -> bool:
+    """
+    Validate email format using regex.
+    
+    Args:
+        email: Email string to validate
+        
+    Returns:
+        True if email format is valid, False otherwise
+    """
+    if not email:
+        return False
+    
+    # Basic email regex pattern - covers most common cases
+    pattern = r'^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$'
+    return re.match(pattern, email) is not None
 
 
 def authenticate_user(db: Session, email: str, password: str) -> User | None:
@@ -78,6 +89,10 @@ def authenticate_user(db: Session, email: str, password: str) -> User | None:
     """
     # Validate inputs
     if not email or not password:
+        return None
+    
+    # Validate email format
+    if not is_valid_email(email):
         return None
         
     try:
@@ -120,10 +135,25 @@ def create_user(db: Session, user_create: UserCreate) -> User:
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Email and password are required"
         )
+    
+    # Validate email format
+    if not is_valid_email(user_create.email):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Invalid email format"
+        )
         
     try:
         hashed_password = hash_password(user_create.password)
         default_role = getattr(settings, 'DEFAULT_USER_ROLE', 'user')
+        
+        # Validate role against allowed roles
+        if default_role not in ALLOWED_ROLES:
+            logger.error(f"Invalid default role configured: {default_role}")
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail="Authentication service temporarily unavailable"
+            )
         
         # Normalize email to lowercase for consistent storage and uniqueness
         normalized_email = user_create.email.strip().lower()
@@ -142,12 +172,21 @@ def create_user(db: Session, user_create: UserCreate) -> User:
         db.commit()
         db.refresh(db_user)
         return db_user
-    except IntegrityError:
+    except IntegrityError as e:
         db.rollback()
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Authentication service temporarily unavailable"
-        )
+        # Check if this is a duplicate email error
+        if "email" in str(e).lower() or "unique" in str(e).lower():
+            logger.warning(f"Duplicate email registration attempt: {user_create.email}")
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Email already registered"
+            )
+        else:
+            logger.error(f"Database integrity error creating user: {e}")
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Authentication service temporarily unavailable"
+            )
     except SQLAlchemyError as e:
         db.rollback()
         logger.error(f"Database error creating user: {e}")

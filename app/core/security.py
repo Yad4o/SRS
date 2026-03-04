@@ -47,6 +47,32 @@ flagged as needing re-hashing (forward-compatible).
 """
 
 
+def _truncate_password_for_bcrypt(plain_password: str) -> str:
+    """
+    Truncate password to fit bcrypt's 72-byte limit without splitting UTF-8 characters.
+    
+    Args:
+        plain_password: The raw password to truncate
+        
+    Returns:
+        Password truncated to maximum 72 bytes
+    """
+    # bcrypt has a 72-byte limit for passwords
+    # Truncate at character level to avoid splitting UTF-8 multibyte characters
+    if len(plain_password.encode('utf-8')) > 72:
+        # Find the character position that keeps us within 72 bytes
+        truncated_password = ""
+        byte_count = 0
+        for char in plain_password:
+            char_bytes = char.encode('utf-8')
+            if byte_count + len(char_bytes) > 72:
+                break
+            truncated_password += char
+            byte_count += len(char_bytes)
+        plain_password = truncated_password
+    return plain_password
+
+
 def hash_password(plain_password: str) -> str:
     """
     Hash a plain-text password using bcrypt.
@@ -63,19 +89,7 @@ def hash_password(plain_password: str) -> str:
 
     Reference: Technical Spec § 10.2 (Password Handling)
     """
-    # bcrypt has a 72-byte limit for passwords
-    # Truncate at character level to avoid splitting UTF-8 multibyte characters
-    if len(plain_password.encode('utf-8')) > 72:
-        # Find the character position that keeps us within 72 bytes
-        truncated_password = ""
-        byte_count = 0
-        for char in plain_password:
-            char_bytes = char.encode('utf-8')
-            if byte_count + len(char_bytes) > 72:
-                break
-            truncated_password += char
-            byte_count += len(char_bytes)
-        plain_password = truncated_password
+    plain_password = _truncate_password_for_bcrypt(plain_password)
     return pwd_context.hash(plain_password)
 
 
@@ -95,19 +109,7 @@ def verify_password(plain_password: str, hashed_password: str) -> bool:
     Reference: Technical Spec § 10.2 (Password Handling)
     """
     try:
-        # bcrypt has a 72-byte limit for passwords
-        # Truncate at character level to avoid splitting UTF-8 multibyte characters
-        if len(plain_password.encode('utf-8')) > 72:
-            # Find the character position that keeps us within 72 bytes
-            truncated_password = ""
-            byte_count = 0
-            for char in plain_password:
-                char_bytes = char.encode('utf-8')
-                if byte_count + len(char_bytes) > 72:
-                    break
-                truncated_password += char
-                byte_count += len(char_bytes)
-            plain_password = truncated_password
+        plain_password = _truncate_password_for_bcrypt(plain_password)
         return pwd_context.verify(plain_password, hashed_password)
     except Exception:
         return False
