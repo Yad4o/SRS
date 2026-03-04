@@ -117,9 +117,6 @@ def create_app() -> FastAPI:
     # Authentication endpoints
     app.include_router(auth.router, tags=["Auth"])
     
-    # Demo endpoints for viewing database data
-    app.include_router(demo.router, tags=["Demo"])
-
     # Demo endpoints — only mount in non-production environments.
     # Set ENV=production in your environment to disable these routes.
     if settings.ENV != "production":
