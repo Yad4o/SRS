@@ -113,6 +113,27 @@ class TestCreateTicket:
         
         assert response.status_code == 422
 
+    def test_create_ticket_database_failure_simulation(self):
+        """Test ticket creation with simulated database failure."""
+        ticket_data = {"message": "Test message"}
+        
+        # Mock the Ticket model constructor to raise an exception
+        with patch('app.api.tickets.Ticket') as mock_ticket:
+            mock_ticket.side_effect = Exception("Database connection failed")
+            
+            response = client.post("/tickets/", json=ticket_data)
+            
+            # Should return 500 with generic error message
+            assert response.status_code == 500
+            data = response.json()
+            
+            # Verify generic error message (no internal details exposed)
+            assert "Internal server error occurred while creating ticket" in data["detail"]
+            # Should not expose internal details
+            assert "Database connection failed" not in data["detail"]
+            assert "sqlalchemy" not in data["detail"].lower()
+            assert "database" not in data["detail"].lower()
+
 
 class TestListTickets:
     """Test cases for GET /tickets endpoint."""
