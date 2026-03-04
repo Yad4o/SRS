@@ -122,6 +122,14 @@ class TestCreateTicket:
         
         # Should either succeed or fail gracefully
         assert response.status_code in [201, 500]
+        
+        # If it fails, should return generic error message
+        if response.status_code == 500:
+            detail = response.json().get("detail", "")
+            assert "Internal server error occurred while creating ticket" in detail
+            # Should not expose internal details
+            assert "sqlalchemy" not in detail.lower()
+            assert "database" not in detail.lower()
 
 
 class TestListTickets:

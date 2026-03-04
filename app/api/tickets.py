@@ -25,6 +25,7 @@ DO NOT:
 from typing import List, Optional
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
+import logging
 
 from app.schemas.ticket import (
     TicketCreate,
@@ -34,6 +35,9 @@ from app.schemas.ticket import (
 from app.db.session import get_db
 from app.models.ticket import Ticket
 from fastapi import status
+
+# Configure logging
+logger = logging.getLogger(__name__)
 
 router = APIRouter(
     prefix="/tickets",
@@ -82,9 +86,10 @@ def create_ticket(
         
     except Exception as e:
         db.rollback()
+        logger.error(f"Failed to create ticket: {str(e)}", exc_info=True)
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Failed to create ticket: {str(e)}"
+            detail="Internal server error occurred while creating ticket"
         )
 
 
@@ -126,9 +131,10 @@ def list_tickets(
         return TicketList(tickets=ticket_responses)
         
     except Exception as e:
+        logger.error(f"Failed to retrieve tickets: {str(e)}", exc_info=True)
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Failed to retrieve tickets: {str(e)}"
+            detail="Internal server error occurred while retrieving tickets"
         )
 
 
@@ -186,9 +192,10 @@ def get_ticket(
         # Re-raise HTTP exceptions (like 404)
         raise
     except Exception as e:
+        logger.error(f"Failed to retrieve ticket {ticket_id}: {str(e)}", exc_info=True)
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Failed to retrieve ticket: {str(e)}"
+            detail="Internal server error occurred while retrieving ticket"
         )
 
 
