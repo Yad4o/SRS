@@ -216,6 +216,14 @@ class TestAuthEndpoints:
         assert info["would_be_truncated"]
         assert info["original_bytes"] > 72
         assert info["max_bytes"] == 72
+        
+        # Test multibyte password that exceeds 72 bytes when UTF-8 encoded
+        # Each 🔐 emoji is 4 bytes in UTF-8, so 20 emojis = 80 bytes
+        multibyte_password = "🔐" * 20 + "A1!"  # 80+ bytes with complexity
+        info = check_password_truncation(multibyte_password)
+        assert info["would_be_truncated"]
+        assert info["original_bytes"] > 72
+        assert info["max_bytes"] == 72
 
     def test_jwt_token_no_email_payload(self, test_client):
         """Test that JWT token no longer contains email in payload."""
