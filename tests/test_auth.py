@@ -199,6 +199,27 @@ class TestAuthEndpoints:
         )
         assert login_response.status_code == 200
 
+    def test_register_long_unicode_password(self, test_client):
+        """Test registration with Unicode password that exceeds 72-byte limit."""
+        # Create a password with multibyte characters that exceeds 72 bytes when UTF-8 encoded
+        # 10 emojis (40 bytes) + 5 Chinese phrases (30 bytes) + "Password123!" (12 bytes) = 82 bytes total
+        long_unicode_password = "🔐" * 10 + "测试" * 5 + "Password123!"  # 82+ bytes with complexity
+        email = unique_email()
+        
+        response = test_client.post(
+            "/auth/register",
+            json={"email": email, "password": long_unicode_password}
+        )
+        
+        assert response.status_code == 200
+        
+        # Should be able to login with the same long Unicode password
+        login_response = test_client.post(
+            "/auth/login",
+            json={"email": email, "password": long_unicode_password}
+        )
+        assert login_response.status_code == 200
+
     def test_password_truncation_info(self, test_client):
         """Test password truncation checking functionality."""
         from app.core.security import check_password_truncation
@@ -455,7 +476,8 @@ class TestTokenValidation:
             email,                    # Original case
             email.lower(),            # All lowercase
             email.upper(),            # All uppercase
-            "CaseSensitive@test.com" # Mixed case
+            "CaseSensitive@test.com", # Mixed case
+            "  CaseSensitive@Test.COM  ", # Leading/trailing whitespace
         ]
         
         for login_email in test_cases:
