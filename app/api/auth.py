@@ -53,6 +53,14 @@ router = APIRouter(prefix="/auth", tags=["Authentication"])
 # Configure logger
 logger = logging.getLogger(__name__)
 
+# Error message constants for better maintainability
+AUTH_SERVICE_UNAVAILABLE = "Authentication service temporarily unavailable"
+INCORRECT_CREDENTIALS = "Incorrect email or password"
+EMAIL_ALREADY_REGISTERED = "Email already registered"
+EMAIL_PASSWORD_REQUIRED = "Email and password are required"
+INVALID_DEFAULT_ROLE = "Invalid default role configuration"
+COULD_NOT_VALIDATE_CREDENTIALS = "Could not validate credentials"
+
 
 def normalize_email(email: str) -> str:
     """
@@ -110,11 +118,11 @@ def authenticate_user(db: Session, email: str, password: str) -> User | None:
         logger.error(f"Database error during authentication: {e}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Authentication service temporarily unavailable"
+            detail=AUTH_SERVICE_UNAVAILABLE
         )
 
 
-def create_user(db: Session, user_create: UserCreate) -> User:
+def create_user(db: Session, user_create: UserCreate) -> UserResponse:
     """
     Create a new user with hashed password.
     
@@ -123,7 +131,7 @@ def create_user(db: Session, user_create: UserCreate) -> User:
         user_create: UserCreate schema with email and password
         
     Returns:
-        Created User object
+        UserResponse schema with user information (no password)
         
     Raises:
         HTTPException: If email already exists (400 Bad Request) or database error occurs
@@ -132,17 +140,14 @@ def create_user(db: Session, user_create: UserCreate) -> User:
     if not user_create.email or not user_create.password:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Email and password are required"
+            detail=EMAIL_PASSWORD_REQUIRED
         )
         
     try:
         # Check if password would be truncated and warn user
         truncation_info = check_password_truncation(user_create.password)
         if truncation_info["would_be_truncated"]:
-            logger.info(
-                f"User registration with long password ({truncation_info['original_bytes']} bytes). "
-                f"Password will be truncated to {truncation_info['max_bytes']} bytes."
-            )
+            logger.info("Password will be truncated to fit bcrypt limit")
         
         hashed_password = hash_password(user_create.password)
         default_role = getattr(settings, 'DEFAULT_USER_ROLE', 'user')
@@ -152,7 +157,7 @@ def create_user(db: Session, user_create: UserCreate) -> User:
             logger.error(f"Invalid default role configured: {default_role}")
             raise HTTPException(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                detail="Authentication service temporarily unavailable"
+                detail=AUTH_SERVICE_UNAVAILABLE
             )
         
         # Normalize email to lowercase for consistent storage and uniqueness
@@ -163,10 +168,24 @@ def create_user(db: Session, user_create: UserCreate) -> User:
             hashed_password=hashed_password,
             role=default_role
         )
+        
         db.add(db_user)
+        db.flush()  # Get the ID without committing
+        
+        # Capture values before commit to avoid expired instance issues
+        user_id = db_user.id
+        user_email = db_user.email
+        user_role = db_user.role
+        
         db.commit()
-        db.refresh(db_user)
-        return db_user
+        
+        # Return UserResponse directly with captured values
+        return UserResponse(
+            id=user_id,
+            email=user_email,
+            role=user_role
+        )
+        
     except IntegrityError as e:
         db.rollback()
         # Check if this is a duplicate email error
@@ -174,20 +193,27 @@ def create_user(db: Session, user_create: UserCreate) -> User:
             logger.warning("Duplicate email registration attempt detected")
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Email already registered"
+                detail=EMAIL_ALREADY_REGISTERED
             )
         else:
             logger.error(f"Database integrity error creating user: {e}")
             raise HTTPException(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                detail="Authentication service temporarily unavailable"
+                detail=AUTH_SERVICE_UNAVAILABLE
             )
     except SQLAlchemyError as e:
         db.rollback()
         logger.error(f"Database error creating user: {e}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Authentication service temporarily unavailable"
+            detail=AUTH_SERVICE_UNAVAILABLE
+        )
+    except Exception as e:
+        db.rollback()
+        logger.error(f"Unexpected error during user creation: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=AUTH_SERVICE_UNAVAILABLE
         )
 
 
@@ -213,7 +239,7 @@ def login(
     if not user:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Incorrect email or password",
+            detail=INCORRECT_CREDENTIALS,
             headers={"WWW-Authenticate": "Bearer"},
         )
     
@@ -252,13 +278,7 @@ def register(
         HTTPException: If registration fails (400 Bad Request or 500 Internal Server Error)
     """
     # Create new user - database constraints will handle duplicates
-    user = create_user(db, user_create)
-    
-    return UserResponse(
-        id=user.id,
-        email=user.email,
-        role=user.role
-    )
+    return create_user(db, user_create)
 
 
 def get_current_user(
@@ -283,7 +303,7 @@ def get_current_user(
     """
     credentials_exception = HTTPException(
         status_code=status.HTTP_401_UNAUTHORIZED,
-        detail="Could not validate credentials",
+        detail=COULD_NOT_VALIDATE_CREDENTIALS,
         headers={"WWW-Authenticate": "Bearer"},
     )
     
@@ -311,7 +331,7 @@ def get_current_user(
         logger.error(f"Database error retrieving user: {e}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Authentication service temporarily unavailable"
+            detail=AUTH_SERVICE_UNAVAILABLE
         )
 
 
