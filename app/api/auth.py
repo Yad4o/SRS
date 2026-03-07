@@ -138,19 +138,16 @@ def create_user(db: Session, user_create: UserCreate) -> User:
     """
     # Validate inputs
     if not user_create.email or not user_create.password:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail=EMAIL_PASSWORD_REQUIRED
-            )
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=EMAIL_PASSWORD_REQUIRED
+        )
         
     try:
         # Check if password would be truncated and warn user
         truncation_info = check_password_truncation(user_create.password)
         if truncation_info["would_be_truncated"]:
-            logger.info(
-                f"User registration with long password ({truncation_info['original_bytes']} bytes). "
-                f"Password will be truncated to {truncation_info['max_bytes']} bytes."
-            )
+            logger.info("Password will be truncated to fit bcrypt limit")
         
         hashed_password = hash_password(user_create.password)
         default_role = getattr(settings, 'DEFAULT_USER_ROLE', 'user')
@@ -172,47 +169,13 @@ def create_user(db: Session, user_create: UserCreate) -> User:
             role=default_role
         )
         
-        try:
-            db.add(db_user)
-            db.flush()  # Get the ID without committing
-            user_id = db_user.id
-            
-            # Commit the transaction
-            db.commit()
-            
-            # Re-query to get the fresh state after commit
-            created_user = db.query(User).filter(User.id == user_id).first()
-            if not created_user:
-                logger.error("Failed to retrieve created user after commit")
-                raise HTTPException(
-                    status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                    detail=AUTH_SERVICE_UNAVAILABLE
-                )
-            
-            return created_user
-            
-        except Exception as e:
-            db.rollback()
-            # Check if this is an integrity error (duplicate email)
-            if "UNIQUE constraint failed" in str(e) or "integrity" in str(e).lower():
-                if "email" in str(e).lower():
-                    logger.warning("Duplicate email registration attempt detected")
-                    raise HTTPException(
-                        status_code=status.HTTP_400_BAD_REQUEST,
-                        detail=EMAIL_ALREADY_REGISTERED
-                    )
-                else:
-                    logger.error(f"Database integrity error creating user: {e}")
-                    raise HTTPException(
-                        status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                        detail=AUTH_SERVICE_UNAVAILABLE
-                    )
-            else:
-                logger.error(f"Error during user creation transaction: {e}")
-                raise HTTPException(
-                    status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                    detail=AUTH_SERVICE_UNAVAILABLE
-                )
+        db.add(db_user)
+        db.flush()  # Get the ID without committing
+        db.commit()
+        
+        # Return the user response directly from db_user (no re-query needed)
+        return db_user
+        
     except IntegrityError as e:
         db.rollback()
         # Check if this is a duplicate email error
@@ -231,6 +194,13 @@ def create_user(db: Session, user_create: UserCreate) -> User:
     except SQLAlchemyError as e:
         db.rollback()
         logger.error(f"Database error creating user: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=AUTH_SERVICE_UNAVAILABLE
+        )
+    except Exception as e:
+        db.rollback()
+        logger.error(f"Unexpected error during user creation: {e}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=AUTH_SERVICE_UNAVAILABLE

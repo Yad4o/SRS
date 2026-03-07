@@ -57,7 +57,6 @@ class TestUserLogin:
 
     def test_userlogin_has_only_expected_fields(self):
         """UserLogin should only expose email and password."""
-        schema = UserLogin(email="user@example.com", password="pass")
         fields = set(UserLogin.model_fields.keys())
         assert fields == {"email", "password"}
 
@@ -99,7 +98,6 @@ class TestUserCreate:
 
     def test_usercreate_has_only_expected_fields(self):
         """UserCreate should only expose email and password."""
-        schema = UserCreate(email="newuser@example.com", password="Password123!")
         fields = set(UserCreate.model_fields.keys())
         assert fields == {"email", "password"}
 
@@ -176,14 +174,12 @@ class TestUserResponse:
 
     def test_userresponse_has_no_password_field(self):
         """UserResponse must NOT expose hashed_password or password."""
-        schema = UserResponse(id=1, email="user@example.com", role="user")
         fields = set(UserResponse.model_fields.keys())
         assert "hashed_password" not in fields
         assert "password" not in fields
 
     def test_userresponse_has_exactly_expected_fields(self):
         """UserResponse should only expose id, email, role."""
-        schema = UserResponse(id=1, email="user@example.com", role="user")
         fields = set(UserResponse.model_fields.keys())
         assert fields == {"id", "email", "role"}
 
@@ -264,7 +260,6 @@ class TestToken:
 
     def test_token_has_exactly_expected_fields(self):
         """Token should only expose access_token and token_type."""
-        token = Token(access_token="x")
         fields = set(Token.model_fields.keys())
         assert fields == {"access_token", "token_type"}
 
