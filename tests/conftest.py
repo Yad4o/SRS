@@ -22,7 +22,9 @@ os.environ["SECRET_KEY"] = "test-secret-key-for-pytest"
 
 # Clean up the temp database file after tests
 def pytest_sessionfinish(session, exitstatus):
+    """Clean up temporary database file after test session."""
     try:
         os.unlink(temp_db.name)
-    except:
-        pass
+    except (OSError, PermissionError) as e:
+        # Log the error but don't fail the test session
+        print(f"Warning: Could not clean up temporary database file {temp_db.name}: {e}")

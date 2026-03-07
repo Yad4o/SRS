@@ -60,8 +60,78 @@ class TestAuthEndpoints:
         assert "id" in data
         assert "password" not in data  # Should never return password
 
-    def test_register_existing_email(self, test_client):
-        """Test registration with existing email returns 400."""
+    def test_register_valid_email_formats(self, test_client):
+        """Test registration with various valid email formats."""
+        valid_emails = [
+            "test@example.com",                # Standard format
+            "test.email@domain.co.uk",        # Multi-level TLD
+            "test+tag@domain.com",            # Plus sign in local part
+            "test_email@sub.domain.com",      # Subdomain
+            "123@domain.com",                 # Numbers in local part
+            "a@b.co",                         # Minimal valid email
+        ]
+        
+        for email in valid_emails:
+            response = test_client.post(
+                "/auth/register",
+                json={"email": email, "password": "Password123!"}
+            )
+            assert response.status_code == 200
+            assert response.json()["email"] == email.lower()
+
+    def test_login_invalid_email_formats(self, test_client):
+        """Test login with empty email (should be caught by EmailStr validation)."""
+        # Test with empty email - this should be caught by EmailStr validation
+        response = test_client.post(
+            "/auth/login",
+            json={"email": "", "password": "Password123!"}
+        )
+        assert response.status_code == 422  # EmailStr validation error
+
+    def test_register_whitespace_emails(self, test_client):
+        """Test registration with emails gets normalized correctly."""
+        # Test that emails are normalized to lowercase
+        email_uppercase = "TEST@NORMALIZATION.COM"
+        response = test_client.post(
+            "/auth/register",
+            json={"email": email_uppercase, "password": "Password123!"}
+        )
+        assert response.status_code == 200
+        # Should be stored in lowercase
+        assert response.json()["email"] == email_uppercase.lower()
+
+    def test_register_whitespace_only_email(self, test_client):
+        """Test registration with whitespace-only email fails."""
+        response = test_client.post(
+            "/auth/register",
+            json={"email": "   ", "password": "Password123!"}
+        )
+        # Should fail at EmailStr validation level
+        assert response.status_code == 422
+
+    def test_register_leading_trailing_whitespace_email(self, test_client):
+        """Test registration with leading/trailing whitespace in email."""
+        email_with_spaces = f"  test{unique_email().split('@')[0]}@example.com  "
+        expected_email = email_with_spaces.strip().lower()
+        response = test_client.post(
+            "/auth/register",
+            json={"email": email_with_spaces, "password": "Password123!"}
+        )
+        assert response.status_code == 200
+        # Should be stored without whitespace and in lowercase
+        assert response.json()["email"] == expected_email
+
+    def test_register_whitespace_only_password(self, test_client):
+        """Test registration with whitespace-only password fails."""
+        response = test_client.post(
+            "/auth/register",
+            json={"email": "test@example.com", "password": "   "}
+        )
+        # Should fail at schema validation level
+        assert response.status_code == 422
+
+    def test_register_existing_email_improved_message(self, test_client):
+        """Test registration with existing email returns specific message."""
         email = unique_email()
         # Register first user
         test_client.post(
@@ -87,6 +157,117 @@ class TestAuthEndpoints:
 
         # Should fail at schema validation level
         assert response.status_code == 422
+
+    def test_register_long_password(self, test_client):
+        """Test registration with very long password (over 72 bytes)."""
+        # Create a password that exceeds 72 bytes when UTF-8 encoded
+        # but still meets complexity requirements
+        long_password = "a" * 51 + "A" * 20 + "1!"  # 73 bytes (ASCII), exercises truncation path
+        email = unique_email()
+        
+        response = test_client.post(
+            "/auth/register",
+            json={"email": email, "password": long_password}
+        )
+        
+        # Should still work (password gets truncated)
+        assert response.status_code == 200
+        
+        # Should be able to login with the same long password
+        login_response = test_client.post(
+            "/auth/login",
+            json={"email": email, "password": long_password}
+        )
+        assert login_response.status_code == 200
+
+    def test_register_unicode_password(self, test_client):
+        """Test registration with Unicode characters in password."""
+        unicode_password = "🔐Password123!测试"  # Mix of emoji and Chinese characters
+        email = unique_email()
+        
+        response = test_client.post(
+            "/auth/register",
+            json={"email": email, "password": unicode_password}
+        )
+        
+        assert response.status_code == 200
+        
+        # Should be able to login with the same Unicode password
+        login_response = test_client.post(
+            "/auth/login",
+            json={"email": email, "password": unicode_password}
+        )
+        assert login_response.status_code == 200
+
+    def test_register_long_unicode_password(self, test_client):
+        """Test registration with Unicode password that exceeds 72-byte limit."""
+        # Create a password with multibyte characters that exceeds 72 bytes when UTF-8 encoded
+        # 10 emojis (40 bytes) + 5 Chinese phrases (30 bytes) + "Password123!" (12 bytes) = 82 bytes total
+        long_unicode_password = "🔐" * 10 + "测试" * 5 + "Password123!"  # 82+ bytes with complexity
+        email = unique_email()
+        
+        response = test_client.post(
+            "/auth/register",
+            json={"email": email, "password": long_unicode_password}
+        )
+        
+        assert response.status_code == 200
+        
+        # Should be able to login with the same long Unicode password
+        login_response = test_client.post(
+            "/auth/login",
+            json={"email": email, "password": long_unicode_password}
+        )
+        assert login_response.status_code == 200
+
+    def test_password_truncation_info(self, test_client):
+        """Test password truncation checking functionality."""
+        from app.core.security import check_password_truncation
+        
+        # Test short password (no truncation)
+        short_password = "Password123!"
+        info = check_password_truncation(short_password)
+        assert not info["would_be_truncated"]
+        assert info["original_bytes"] < 72
+        assert info["max_bytes"] == 72
+        
+        # Test long password (would be truncated)
+        long_password = "a" * 100  # 100 characters
+        info = check_password_truncation(long_password)
+        assert info["would_be_truncated"]
+        assert info["original_bytes"] > 72
+        assert info["max_bytes"] == 72
+        
+        # Test multibyte password that exceeds 72 bytes when UTF-8 encoded
+        # Each 🔐 emoji is 4 bytes in UTF-8, so 20 emojis = 80 bytes
+        multibyte_password = "🔐" * 20 + "A1!"  # 80+ bytes with complexity
+        info = check_password_truncation(multibyte_password)
+        assert info["would_be_truncated"]
+        assert info["original_bytes"] > 72
+        assert info["max_bytes"] == 72
+
+    def test_jwt_token_no_email_payload(self, test_client):
+        """Test that JWT token no longer contains email in payload."""
+        email = unique_email()
+        # Register and login to get token
+        test_client.post(
+            "/auth/register",
+            json={"email": email, "password": "Password123!"}
+        )
+        login_response = test_client.post(
+            "/auth/login",
+            json={"email": email, "password": "Password123!"}
+        )
+        token = login_response.json()["access_token"]
+        
+        # Decode token and check payload
+        payload = decode_token(token)
+        
+        # Should contain sub and role but NOT email
+        assert "sub" in payload
+        assert "role" in payload
+        assert "email" not in payload
+        assert payload["role"] == "user"
 
     def test_login_success(self, test_client):
         """Test successful login returns valid JWT token."""
@@ -114,7 +295,7 @@ class TestAuthEndpoints:
         payload = decode_token(token)
         assert "sub" in payload
         assert "exp" in payload
-        assert payload["email"] == email
+        assert "email" not in payload  # Email should not be in token for security
         assert payload["role"] == "user"
 
     def test_login_invalid_email(self, test_client):
@@ -191,14 +372,15 @@ class TestTokenValidation:
 
     def test_token_contains_required_claims(self):
         """Test JWT token contains required claims."""
-        token = create_access_token({"sub": "123", "email": "test@example.com", "role": "user"})
+        token = create_access_token({"sub": "123", "role": "user"})
         payload = decode_token(token)
 
         assert "sub" in payload
         assert "exp" in payload
         assert payload["sub"] == "123"
-        assert payload["email"] == "test@example.com"
+        assert "role" in payload
         assert payload["role"] == "user"
+        assert "email" not in payload  # Email should not be in token
 
     def test_token_expires_correctly(self):
         """Test JWT token expires correctly."""
@@ -274,8 +456,8 @@ class TestTokenValidation:
             assert response.status_code == 200
             assert "access_token" in response.json()
 
-    def test_login_case_sensitive_email(self, test_client):
-        """Test that email login works with consistent email case."""
+    def test_login_case_insensitive_email(self, test_client):
+        """Test that email login works with case-insensitive email matching."""
         email = "CaseSensitive@Test.COM"
         password = "Password123!"
 
@@ -285,10 +467,23 @@ class TestTokenValidation:
             json={"email": email, "password": password}
         )
         assert response.status_code == 200
+        # Email should be stored in lowercase
+        registered_email = response.json()["email"]
+        assert registered_email == email.lower()
 
-        # Login should work with the same email (case preserved)
-        response = test_client.post(
-            "/auth/login",
-            json={"email": email, "password": password}
-        )
-        assert response.status_code == 200
+        # Login should work with any case variation due to normalization
+        test_cases = [
+            email,                    # Original case
+            email.lower(),            # All lowercase
+            email.upper(),            # All uppercase
+            "CaseSensitive@test.com", # Mixed case
+            "  CaseSensitive@Test.COM  ", # Leading/trailing whitespace
+        ]
+        
+        for login_email in test_cases:
+            response = test_client.post(
+                "/auth/login",
+                json={"email": login_email, "password": password}
+            )
+            assert response.status_code == 200
+            assert "access_token" in response.json()

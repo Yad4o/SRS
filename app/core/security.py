@@ -47,6 +47,65 @@ flagged as needing re-hashing (forward-compatible).
 """
 
 
+def check_password_truncation(plain_password: str) -> dict:
+    """
+    Check if a password would be truncated by bcrypt.
+    
+    Args:
+        plain_password: The raw password to check
+        
+    Returns:
+        dict: Information about potential truncation
+    """
+    original_bytes = len(plain_password.encode('utf-8'))
+    would_be_truncated = original_bytes > 72
+    
+    return {
+        "would_be_truncated": would_be_truncated,
+        "original_bytes": original_bytes,
+        "max_bytes": 72
+    }
+
+
+def _truncate_password_for_bcrypt(plain_password: str) -> str:
+    """
+    Truncate password to fit bcrypt's 72-byte limit without splitting UTF-8 characters.
+    
+    Args:
+        plain_password: The raw password to truncate
+        
+    Returns:
+        Password truncated to maximum 72 bytes
+    """
+    # bcrypt has a 72-byte limit for passwords
+    original_length = len(plain_password)
+    original_bytes = len(plain_password.encode('utf-8'))
+    
+    if original_bytes > 72:
+        import logging
+        logger = logging.getLogger(__name__)
+        
+        # Find the character position that keeps us within 72 bytes
+        truncated_password = ""
+        byte_count = 0
+        for char in plain_password:
+            char_bytes = char.encode('utf-8')
+            if byte_count + len(char_bytes) > 72:
+                break
+            truncated_password += char
+            byte_count += len(char_bytes)
+        
+        # Log the truncation for security monitoring
+        logger.warning(
+            f"Password truncated from {original_length} characters ({original_bytes} bytes) "
+            f"to {len(truncated_password)} characters ({byte_count} bytes) to fit bcrypt limit"
+        )
+        
+        return truncated_password
+    
+    return plain_password
+
+
 def hash_password(plain_password: str) -> str:
     """
     Hash a plain-text password using bcrypt.
@@ -63,6 +122,7 @@ def hash_password(plain_password: str) -> str:
 
     Reference: Technical Spec § 10.2 (Password Handling)
     """
+    plain_password = _truncate_password_for_bcrypt(plain_password)
     return pwd_context.hash(plain_password)
 
 
@@ -82,6 +142,7 @@ def verify_password(plain_password: str, hashed_password: str) -> bool:
     Reference: Technical Spec § 10.2 (Password Handling)
     """
     try:
+        plain_password = _truncate_password_for_bcrypt(plain_password)
         return pwd_context.verify(plain_password, hashed_password)
     except Exception:
         return False

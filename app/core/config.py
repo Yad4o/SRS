@@ -28,6 +28,9 @@ from functools import lru_cache
 from pydantic_settings import BaseSettings, SettingsConfigDict
 from pydantic import field_validator
 
+# Define allowed roles for security
+ALLOWED_ROLES = {"user", "agent", "admin"}
+
 class Settings(BaseSettings):
     """
     Application settings loaded from environment variables.
@@ -60,6 +63,17 @@ class Settings(BaseSettings):
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 60
     ALGORITHM: str = "HS256"
     CORS_ORIGINS: list[str] = []
+    DEFAULT_USER_ROLE: str = "user"
+    
+    @field_validator("DEFAULT_USER_ROLE")
+    @classmethod
+    def validate_default_user_role(cls, v: str) -> str:
+        """Validate that DEFAULT_USER_ROLE is in the allowed roles."""
+        if v not in ALLOWED_ROLES:
+            raise ValueError(
+                f"DEFAULT_USER_ROLE must be one of {ALLOWED_ROLES}, got '{v}'"
+            )
+        return v
 
     # -------------------------------------------------
     # Database

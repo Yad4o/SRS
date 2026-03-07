@@ -29,16 +29,18 @@ References:
 - Task 2.2 (User Schemas)
 """
 
+import logging
+
 from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.security import OAuth2PasswordBearer
 from sqlalchemy.orm import Session
-from sqlalchemy.exc import IntegrityError
+from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 from datetime import timedelta
 from typing import Annotated
 from jose import JWTError
 
-from app.core.security import verify_password, create_access_token, hash_password, decode_token
-from app.core.config import settings
+from app.core.security import verify_password, create_access_token, hash_password, decode_token, check_password_truncation
+from app.core.config import settings, ALLOWED_ROLES
 from app.db.session import get_db
 from app.models.user import User
 from app.schemas.user import UserLogin, UserCreate, UserResponse, Token
@@ -47,6 +49,32 @@ from app.schemas.user import UserLogin, UserCreate, UserResponse, Token
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="auth/login")
 
 router = APIRouter(prefix="/auth", tags=["Authentication"])
+
+# Configure logger
+logger = logging.getLogger(__name__)
+
+
+def normalize_email(email: str) -> str:
+    """
+    Normalize email address for consistent storage and lookup.
+    
+    Args:
+        email: Email string to normalize
+        
+    Returns:
+        Normalized email (lowercase and stripped)
+        
+    Raises:
+        ValueError: If email is empty or only whitespace
+    """
+    if not email:
+        raise ValueError("Email cannot be empty")
+    
+    normalized = email.strip().lower()
+    if not normalized:
+        raise ValueError("Email cannot be empty")
+    
+    return normalized
 
 
 def authenticate_user(db: Session, email: str, password: str) -> User | None:
@@ -60,13 +88,30 @@ def authenticate_user(db: Session, email: str, password: str) -> User | None:
         
     Returns:
         User object if authentication successful, None otherwise
+        
+    Raises:
+        HTTPException: If database error occurs (500 Internal Server Error)
     """
-    user = db.query(User).filter(User.email == email).first()
-    if not user:
+    # Validate inputs
+    if not email or not password:
         return None
-    if not verify_password(password, user.hashed_password):
-        return None
-    return user
+        
+    try:
+        # Normalize email to lowercase for consistent storage and lookup
+        normalized_email = normalize_email(email)
+            
+        user = db.query(User).filter(User.email == normalized_email).first()
+        if not user:
+            return None
+        if not verify_password(password, user.hashed_password):
+            return None
+        return user
+    except SQLAlchemyError as e:
+        logger.error(f"Database error during authentication: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Authentication service temporarily unavailable"
+        )
 
 
 def create_user(db: Session, user_create: UserCreate) -> User:
@@ -81,27 +126,69 @@ def create_user(db: Session, user_create: UserCreate) -> User:
         Created User object
         
     Raises:
-        HTTPException: If email already exists (400 Bad Request)
+        HTTPException: If email already exists (400 Bad Request) or database error occurs
     """
-    hashed_password = hash_password(user_create.password)
-    db_user = User(
-        email=user_create.email,
-        hashed_password=hashed_password,
-        role="user"  # Default role for new registrations
-    )
-    db.add(db_user)
-    
-    try:
-        db.commit()
-        db.refresh(db_user)
-    except IntegrityError:
-        db.rollback()
+    # Validate inputs
+    if not user_create.email or not user_create.password:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Email already registered"
+            detail="Email and password are required"
         )
-    
-    return db_user
+        
+    try:
+        # Check if password would be truncated and warn user
+        truncation_info = check_password_truncation(user_create.password)
+        if truncation_info["would_be_truncated"]:
+            logger.info(
+                f"User registration with long password ({truncation_info['original_bytes']} bytes). "
+                f"Password will be truncated to {truncation_info['max_bytes']} bytes."
+            )
+        
+        hashed_password = hash_password(user_create.password)
+        default_role = getattr(settings, 'DEFAULT_USER_ROLE', 'user')
+        
+        # Validate role against allowed roles
+        if default_role not in ALLOWED_ROLES:
+            logger.error(f"Invalid default role configured: {default_role}")
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail="Authentication service temporarily unavailable"
+            )
+        
+        # Normalize email to lowercase for consistent storage and uniqueness
+        normalized_email = normalize_email(user_create.email)
+        
+        db_user = User(
+            email=normalized_email,
+            hashed_password=hashed_password,
+            role=default_role
+        )
+        db.add(db_user)
+        db.commit()
+        db.refresh(db_user)
+        return db_user
+    except IntegrityError as e:
+        db.rollback()
+        # Check if this is a duplicate email error
+        if "email" in str(e).lower() or "unique" in str(e).lower():
+            logger.warning("Duplicate email registration attempt detected")
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Email already registered"
+            )
+        else:
+            logger.error(f"Database integrity error creating user: {e}")
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail="Authentication service temporarily unavailable"
+            )
+    except SQLAlchemyError as e:
+        db.rollback()
+        logger.error(f"Database error creating user: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Authentication service temporarily unavailable"
+        )
 
 
 @router.post("/login", response_model=Token)
@@ -130,10 +217,10 @@ def login(
             headers={"WWW-Authenticate": "Bearer"},
         )
     
-    # Create access token with user info
+    # Create access token with user info (removed email for security)
     access_token_expires = timedelta(minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES)
     access_token = create_access_token(
-        data={"sub": str(user.id), "email": user.email, "role": user.role},
+        data={"sub": str(user.id), "role": user.role},
         expires_delta=access_token_expires
     )
     
@@ -151,7 +238,7 @@ def register(
     """
     Register a new user and return user information.
     
-    This is an optional endpoint that creates a new user with hashed password.
+    This endpoint creates a new user with hashed password.
     The password is validated by the UserCreate schema before reaching here.
     
     Args:
@@ -162,17 +249,9 @@ def register(
         UserResponse schema with user information (no password)
         
     Raises:
-        HTTPException: If user already exists (400 Bad Request)
+        HTTPException: If registration fails (400 Bad Request or 500 Internal Server Error)
     """
-    # Check if user already exists
-    existing_user = db.query(User).filter(User.email == user_create.email).first()
-    if existing_user:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Email already registered"
-        )
-    
-    # Create new user
+    # Create new user - database constraints will handle duplicates
     user = create_user(db, user_create)
     
     return UserResponse(
@@ -223,11 +302,17 @@ def get_current_user(
     except JWTError:
         raise credentials_exception
     
-    user = db.query(User).filter(User.id == user_id).first()
-    if user is None:
-        raise credentials_exception
-    
-    return user
+    try:
+        user = db.query(User).filter(User.id == user_id).first()
+        if user is None:
+            raise credentials_exception
+        return user
+    except SQLAlchemyError as e:
+        logger.error(f"Database error retrieving user: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Authentication service temporarily unavailable"
+        )
 
 
 @router.get("/me", response_model=UserResponse)
