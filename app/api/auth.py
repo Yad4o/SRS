@@ -53,6 +53,14 @@ router = APIRouter(prefix="/auth", tags=["Authentication"])
 # Configure logger
 logger = logging.getLogger(__name__)
 
+# Error message constants for better maintainability
+AUTH_SERVICE_UNAVAILABLE = "Authentication service temporarily unavailable"
+INCORRECT_CREDENTIALS = "Incorrect email or password"
+EMAIL_ALREADY_REGISTERED = "Email already registered"
+EMAIL_PASSWORD_REQUIRED = "Email and password are required"
+INVALID_DEFAULT_ROLE = "Invalid default role configuration"
+COULD_NOT_VALIDATE_CREDENTIALS = "Could not validate credentials"
+
 
 def normalize_email(email: str) -> str:
     """
@@ -110,7 +118,7 @@ def authenticate_user(db: Session, email: str, password: str) -> User | None:
         logger.error(f"Database error during authentication: {e}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Authentication service temporarily unavailable"
+            detail=AUTH_SERVICE_UNAVAILABLE
         )
 
 
@@ -130,10 +138,10 @@ def create_user(db: Session, user_create: UserCreate) -> User:
     """
     # Validate inputs
     if not user_create.email or not user_create.password:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Email and password are required"
-        )
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=EMAIL_PASSWORD_REQUIRED
+            )
         
     try:
         # Check if password would be truncated and warn user
@@ -152,7 +160,7 @@ def create_user(db: Session, user_create: UserCreate) -> User:
             logger.error(f"Invalid default role configured: {default_role}")
             raise HTTPException(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                detail="Authentication service temporarily unavailable"
+                detail=AUTH_SERVICE_UNAVAILABLE
             )
         
         # Normalize email to lowercase for consistent storage and uniqueness
@@ -163,10 +171,48 @@ def create_user(db: Session, user_create: UserCreate) -> User:
             hashed_password=hashed_password,
             role=default_role
         )
-        db.add(db_user)
-        db.commit()
-        db.refresh(db_user)
-        return db_user
+        
+        try:
+            db.add(db_user)
+            db.flush()  # Get the ID without committing
+            user_id = db_user.id
+            
+            # Commit the transaction
+            db.commit()
+            
+            # Re-query to get the fresh state after commit
+            created_user = db.query(User).filter(User.id == user_id).first()
+            if not created_user:
+                logger.error("Failed to retrieve created user after commit")
+                raise HTTPException(
+                    status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                    detail=AUTH_SERVICE_UNAVAILABLE
+                )
+            
+            return created_user
+            
+        except Exception as e:
+            db.rollback()
+            # Check if this is an integrity error (duplicate email)
+            if "UNIQUE constraint failed" in str(e) or "integrity" in str(e).lower():
+                if "email" in str(e).lower():
+                    logger.warning("Duplicate email registration attempt detected")
+                    raise HTTPException(
+                        status_code=status.HTTP_400_BAD_REQUEST,
+                        detail=EMAIL_ALREADY_REGISTERED
+                    )
+                else:
+                    logger.error(f"Database integrity error creating user: {e}")
+                    raise HTTPException(
+                        status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                        detail=AUTH_SERVICE_UNAVAILABLE
+                    )
+            else:
+                logger.error(f"Error during user creation transaction: {e}")
+                raise HTTPException(
+                    status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                    detail=AUTH_SERVICE_UNAVAILABLE
+                )
     except IntegrityError as e:
         db.rollback()
         # Check if this is a duplicate email error
@@ -174,20 +220,20 @@ def create_user(db: Session, user_create: UserCreate) -> User:
             logger.warning("Duplicate email registration attempt detected")
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Email already registered"
+                detail=EMAIL_ALREADY_REGISTERED
             )
         else:
             logger.error(f"Database integrity error creating user: {e}")
             raise HTTPException(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                detail="Authentication service temporarily unavailable"
+                detail=AUTH_SERVICE_UNAVAILABLE
             )
     except SQLAlchemyError as e:
         db.rollback()
         logger.error(f"Database error creating user: {e}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Authentication service temporarily unavailable"
+            detail=AUTH_SERVICE_UNAVAILABLE
         )
 
 
@@ -213,7 +259,7 @@ def login(
     if not user:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Incorrect email or password",
+            detail=INCORRECT_CREDENTIALS,
             headers={"WWW-Authenticate": "Bearer"},
         )
     
@@ -283,7 +329,7 @@ def get_current_user(
     """
     credentials_exception = HTTPException(
         status_code=status.HTTP_401_UNAUTHORIZED,
-        detail="Could not validate credentials",
+        detail=COULD_NOT_VALIDATE_CREDENTIALS,
         headers={"WWW-Authenticate": "Bearer"},
     )
     
@@ -311,7 +357,7 @@ def get_current_user(
         logger.error(f"Database error retrieving user: {e}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Authentication service temporarily unavailable"
+            detail=AUTH_SERVICE_UNAVAILABLE
         )
 
 

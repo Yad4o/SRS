@@ -95,10 +95,9 @@ def _truncate_password_for_bcrypt(plain_password: str) -> str:
             truncated_password += char
             byte_count += len(char_bytes)
         
-        # Log the truncation for security monitoring
+        # Log the truncation for security monitoring (without revealing length details)
         logger.warning(
-            f"Password truncated from {original_length} characters ({original_bytes} bytes) "
-            f"to {len(truncated_password)} characters ({byte_count} bytes) to fit bcrypt limit"
+            "Password truncated to fit bcrypt 72-byte limit for security"
         )
         
         return truncated_password
@@ -210,8 +209,20 @@ def decode_token(token: str) -> dict:
 
     Reference: Technical Spec § 10.1 (Authentication)
     """
-    return jwt.decode(
+    payload = jwt.decode(
         token,
         settings.SECRET_KEY,
         algorithms=[settings.ALGORITHM],
     )
+    
+    # Explicit expiration check for additional security
+    exp = payload.get("exp")
+    if exp is None:
+        raise JWTError("Token missing expiration claim")
+    
+    # Check if token is expired
+    from datetime import datetime, timezone
+    if datetime.now(timezone.utc) > datetime.fromtimestamp(exp, timezone.utc):
+        raise JWTError("Token has expired")
+    
+    return payload
