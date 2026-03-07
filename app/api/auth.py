@@ -122,7 +122,7 @@ def authenticate_user(db: Session, email: str, password: str) -> User | None:
         )
 
 
-def create_user(db: Session, user_create: UserCreate) -> User:
+def create_user(db: Session, user_create: UserCreate) -> UserResponse:
     """
     Create a new user with hashed password.
     
@@ -131,7 +131,7 @@ def create_user(db: Session, user_create: UserCreate) -> User:
         user_create: UserCreate schema with email and password
         
     Returns:
-        Created User object
+        UserResponse schema with user information (no password)
         
     Raises:
         HTTPException: If email already exists (400 Bad Request) or database error occurs
@@ -171,10 +171,20 @@ def create_user(db: Session, user_create: UserCreate) -> User:
         
         db.add(db_user)
         db.flush()  # Get the ID without committing
+        
+        # Capture values before commit to avoid expired instance issues
+        user_id = db_user.id
+        user_email = db_user.email
+        user_role = db_user.role
+        
         db.commit()
         
-        # Return the user response directly from db_user (no re-query needed)
-        return db_user
+        # Return UserResponse directly with captured values
+        return UserResponse(
+            id=user_id,
+            email=user_email,
+            role=user_role
+        )
         
     except IntegrityError as e:
         db.rollback()
@@ -268,13 +278,7 @@ def register(
         HTTPException: If registration fails (400 Bad Request or 500 Internal Server Error)
     """
     # Create new user - database constraints will handle duplicates
-    user = create_user(db, user_create)
-    
-    return UserResponse(
-        id=user.id,
-        email=user.email,
-        role=user.role
-    )
+    return create_user(db, user_create)
 
 
 def get_current_user(
