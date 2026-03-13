@@ -141,7 +141,7 @@ class IntentClassifier:
             >>> classifier = IntentClassifier()
             >>> result = classifier.classify_intent("I can't login to my account")
             >>> print(result)
-            {'intent': 'login_issue', 'confidence': 0.9}
+            {'intent': 'login_issue', 'confidence': <confidence>}
         """
         if not message or not isinstance(message, str):
             return {"intent": "unknown", "confidence": 0.0}
@@ -217,8 +217,10 @@ class IntentClassifier:
             keyword_lower = keyword.lower()
             
             if len(keyword.split()) > 1:
-                # Multi-word keywords: use substring matching on normalized message
-                if keyword_lower in message.lower():
+                # Multi-word keywords: use phrase-boundary matching on normalized message
+                escaped_keyword = re.escape(keyword_lower)
+                pattern = r'\b' + escaped_keyword + r'\b'
+                if re.search(pattern, message.lower()):
                     multi_word_matches += 1
                     keyword_matches += 1
             else:
