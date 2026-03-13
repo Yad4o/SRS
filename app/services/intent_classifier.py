@@ -67,7 +67,8 @@ class IntentClassifier:
             "patterns": [
                 r"(?:update|change|modify).*(?:account|profile|settings)",
                 r"(?:delete|remove|close).*(?:account|profile)",
-                r"(?:personal|contact).*(?:information|details)"
+                r"(?:personal|contact).*(?:information|details)",
+                r"(?:update|change).*(?:email|email address|phone|address)"
             ],
             "base_confidence": 0.8
         },
