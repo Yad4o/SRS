@@ -102,3 +102,52 @@ class TicketList(BaseModel):
     """
 
     tickets: List[TicketResponse]
+
+
+class FeedbackCreate(BaseModel):
+    """
+    Schema used when a user submits feedback for a ticket.
+
+    Used in:
+    --------
+    POST /feedback
+
+    Fields:
+    -------
+    - ticket_id: ID of the ticket being rated
+    - rating: User rating (1-5 scale)
+    - resolved: Whether the issue was actually resolved
+    """
+
+    ticket_id: int
+    rating: int
+    resolved: bool
+
+    # TODO (Validation Enhancements):
+    # - rating range validation (1-5)
+    # - ticket existence validation
+
+
+class FeedbackResponse(BaseModel):
+    """
+    Schema returned when fetching feedback for a ticket.
+
+    Used in:
+    --------
+    GET /feedback/{ticket_id}
+    GET /feedback?ticket_id=...
+
+    Fields:
+    -------
+    - ticket_id: ID of the ticket
+    - rating: User rating (1-5)
+    - resolved: Whether issue was resolved
+    - created_at: When feedback was submitted
+    """
+
+    ticket_id: int
+    rating: int
+    resolved: bool
+    created_at: datetime
+
+    model_config = ConfigDict(from_attributes=True)
