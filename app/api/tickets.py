@@ -39,7 +39,7 @@ from fastapi import status
 # Import AI services for pipeline
 from app.services.classifier import classify_intent
 from app.services.similarity_search import find_similar_ticket
-from app.services.decision_engine import decide_resolution
+from app.services.decision import decide_resolution, ResolutionDecision
 from app.services.response_generator import generate_response
 
 # Configure logging
@@ -88,7 +88,7 @@ def create_ticket(
         
         # Step 2: Save initial ticket to get ID
         db.add(ticket)
-        db.commit()
+        db.flush()
         db.refresh(ticket)
         
         # Step 3: Run AI pipeline with error handling
@@ -120,7 +120,7 @@ def create_ticket(
             # Run decision engine
             decision = decide_resolution(ticket.confidence)
             
-            if decision == "AUTO_RESOLVE":
+            if decision == ResolutionDecision.AUTO_RESOLVE:
                 # Generate response and auto-resolve
                 ai_response = generate_response(
                     intent=ticket.intent,
