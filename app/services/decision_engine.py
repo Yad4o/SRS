@@ -10,16 +10,11 @@ Reference: Technical Spec § 9.4 (Decision Engine)
 Version: 3.4 - Decision Engine Implementation
 """
 
-from typing import Literal, Optional
-from enum import Enum
+from typing import Optional
 from numbers import Real
+
 from app.core.config import settings
-
-
-class ResolutionDecision(Enum):
-    """Enum for resolution decision types."""
-    AUTO_RESOLVE = "AUTO_RESOLVE"
-    ESCALATE = "ESCALATE"
+from app.services.decision import ResolutionDecision
 
 
 class DecisionEngine:
@@ -56,7 +51,7 @@ class DecisionEngine:
         
         self.confidence_threshold = confidence_threshold
     
-    def decide_resolution(self, confidence: float) -> Literal["AUTO_RESOLVE", "ESCALATE"]:
+    def decide_resolution(self, confidence: float) -> ResolutionDecision:
         """
         Determine whether a ticket should be auto-resolved or escalated.
         
@@ -66,29 +61,29 @@ class DecisionEngine:
             confidence: Confidence score from intent classification (0.0-1.0)
             
         Returns:
-            Literal["AUTO_RESOLVE", "ESCALATE"]: Resolution decision
+            ResolutionDecision: Resolution decision enum
             
         Examples:
             >>> engine = DecisionEngine(confidence_threshold=0.8)
             >>> engine.decide_resolution(0.9)
-            'AUTO_RESOLVE'
+            ResolutionDecision.AUTO_RESOLVE
             >>> engine.decide_resolution(0.7)
-            'ESCALATE'
+            ResolutionDecision.ESCALATE
             >>> engine.decide_resolution(1.5)  # Invalid confidence
-            'ESCALATE'
+            ResolutionDecision.ESCALATE
         """
         # Validation: confidence must be 0.0-1.0
         if not isinstance(confidence, Real) or isinstance(confidence, bool):
-            return "ESCALATE"
+            return ResolutionDecision.ESCALATE
         
         if not (0.0 <= confidence <= 1.0):
-            return "ESCALATE"
+            return ResolutionDecision.ESCALATE
         
         # Decision rule
         if confidence >= self.confidence_threshold:
-            return "AUTO_RESOLVE"
+            return ResolutionDecision.AUTO_RESOLVE
         else:
-            return "ESCALATE"
+            return ResolutionDecision.ESCALATE
     
     def get_threshold(self) -> float:
         """
@@ -126,7 +121,7 @@ class DecisionEngine:
 decision_engine = DecisionEngine()
 
 
-def decide_resolution(confidence: float) -> Literal["AUTO_RESOLVE", "ESCALATE"]:
+def decide_resolution(confidence: float) -> ResolutionDecision:
     """
     Convenience function for resolution decision.
     
@@ -134,15 +129,15 @@ def decide_resolution(confidence: float) -> Literal["AUTO_RESOLVE", "ESCALATE"]:
         confidence: Confidence score from intent classification (0.0-1.0)
         
     Returns:
-        Literal["AUTO_RESOLVE", "ESCALATE"]: Resolution decision
+        ResolutionDecision: Resolution decision enum
         
     Example:
         >>> decide_resolution(0.8)
-        'AUTO_RESOLVE'
+        ResolutionDecision.AUTO_RESOLVE
         >>> decide_resolution(0.7)
-        'ESCALATE'
+        ResolutionDecision.ESCALATE
         >>> decide_resolution(-0.1)  # Invalid confidence
-        'ESCALATE'
+        ResolutionDecision.ESCALATE
     """
     return decision_engine.decide_resolution(confidence)
 
