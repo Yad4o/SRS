@@ -75,8 +75,8 @@ class Ticket(Base):
 
     status = Column(
         String,
-        default="open",
         nullable=False,
+        default="open",
         doc="Ticket status: open | auto_resolved | escalated | closed",
     )
 

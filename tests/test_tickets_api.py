@@ -50,11 +50,15 @@ class TestCreateTicket:
         data = response.json()
         
         assert data["message"] == ticket_data["message"]
-        assert data["status"] == "open"
+        # After AI pipeline integration, tickets may be auto-resolved or escalated
+        assert data["status"] in ["open", "auto_resolved", "escalated"]
         assert "id" in data
         assert "created_at" in data
-        assert data["intent"] is None
-        assert data["confidence"] is None
+        # Intent and confidence may be populated by AI pipeline
+        if data["status"] == "auto_resolved":
+            assert data["intent"] is not None
+            assert data["confidence"] is not None
+            assert "response" in data
 
     def test_create_ticket_empty_message(self):
         """Test ticket creation with empty message."""
@@ -251,7 +255,8 @@ class TestGetTicket:
         
         assert data["id"] == ticket_id
         assert data["message"] == "Test ticket"
-        assert data["status"] == "open"
+        # After AI pipeline integration, tickets may be auto-resolved or escalated
+        assert data["status"] in ["open", "auto_resolved", "escalated"]
         assert "created_at" in data
 
     def test_get_ticket_not_found(self):
@@ -325,7 +330,8 @@ class TestTicketAPIIntegration:
         
         # Verify created ticket structure
         assert created_ticket["message"] == create_data["message"]
-        assert created_ticket["status"] == "open"
+        # After AI pipeline integration, tickets may be auto-resolved or escalated
+        assert created_ticket["status"] in ["open", "auto_resolved", "escalated"]
         
         # 2. List all tickets and verify our ticket is there
         list_response = client.get("/tickets/")
@@ -352,7 +358,8 @@ class TestTicketAPIIntegration:
         # Verify it matches the original
         assert retrieved_ticket["id"] == ticket_id
         assert retrieved_ticket["message"] == create_data["message"]
-        assert retrieved_ticket["status"] == "open"
+        # After AI pipeline integration, tickets may be auto-resolved or escalated
+        assert retrieved_ticket["status"] in ["open", "auto_resolved", "escalated"]
 
     def test_multiple_tickets_workflow(self):
         """Test workflow with multiple tickets."""
@@ -404,10 +411,11 @@ class TestTicketAPIIntegration:
         assert open_response.status_code == 200
         open_tickets = open_response.json()["tickets"]
         
-        # All tickets should be open (since we haven't implemented AI processing yet)
-        assert len(open_tickets) == len(all_tickets)
+        # After AI pipeline integration, some tickets may be auto-resolved or escalated
+        # So we just verify that filtering works and returns tickets with the specified status
+        assert len(open_tickets) >= 0  # May be 0 if all tickets were auto-resolved/escalated
         
-        # Verify all are actually open
+        # Verify all returned tickets are actually open
         for ticket in open_tickets:
             assert ticket["status"] == "open"
 

@@ -98,10 +98,13 @@ def create_ticket(
             ticket.intent = classification_result.get("intent")
             ticket.confidence = classification_result.get("confidence")
             
-            # Fetch resolved tickets for similarity search
+            # Fetch resolved tickets for similarity search (limited to recent tickets)
             resolved_tickets = db.query(Ticket).filter(
-                Ticket.status == "auto_resolved"
-            ).all()
+                Ticket.status == "auto_resolved",
+                Ticket.response.isnot(None)
+            ).order_by(
+                Ticket.created_at.desc()
+            ).limit(50).all()  # Limit to 50 most recent resolved tickets
             
             # Convert to list of dicts for similarity search
             resolved_tickets_list = [
@@ -110,7 +113,6 @@ def create_ticket(
                     "response": t.response
                 }
                 for t in resolved_tickets
-                if t.response  # Only include tickets with responses
             ]
             
             # Search for similar tickets
