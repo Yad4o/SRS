@@ -23,86 +23,65 @@ def test_legacy_classifier_delegates_to_new_implementation():
         assert "deprecated" in str(w[0].message).lower()
         assert "intent_classifier" in str(w[0].message)
         
-        # Results should be identical (legacy returns dict, new returns TypedDict)
-        assert legacy_result["intent"] == new_result["intent"]
-        assert legacy_result["confidence"] == new_result["confidence"]
+        # Results should be identical
+        assert legacy_result == new_result
 
 
 def test_legacy_classifier_login_issue():
-    with warnings.catch_warnings():
-        warnings.simplefilter("ignore", DeprecationWarning)
-        result = classify_intent("I cannot login to my account")
+    result = classify_intent("I cannot login to my account")
     assert result["intent"] == "login_issue"
     assert result["confidence"] > 0.0
 
 
 def test_legacy_classifier_payment_issue():
-    with warnings.catch_warnings():
-        warnings.simplefilter("ignore", DeprecationWarning)
-        result = classify_intent("My payment was debited twice")
+    result = classify_intent("My payment was debited twice")
     assert result["intent"] == "payment_issue"
     assert result["confidence"] > 0.0
 
 
 def test_legacy_classifier_account_issue():
-    with warnings.catch_warnings():
-        warnings.simplefilter("ignore", DeprecationWarning)
-        result = classify_intent("Please delete my account")
+    result = classify_intent("Please delete my account")
     assert result["intent"] == "account_issue"
     assert result["confidence"] > 0.0
 
 
 def test_legacy_classifier_technical_issue():
-    with warnings.catch_warnings():
-        warnings.simplefilter("ignore", DeprecationWarning)
-        result = classify_intent("The app is crashing with an error")
+    result = classify_intent("The app is crashing with an error")
     assert result["intent"] == "technical_issue"
     assert result["confidence"] > 0.0
 
 
 def test_legacy_classifier_feature_request():
-    with warnings.catch_warnings():
-        warnings.simplefilter("ignore", DeprecationWarning)
-        result = classify_intent("Please add a dark mode feature")
+    result = classify_intent("Please add a dark mode feature")
     assert result["intent"] == "feature_request"
     assert result["confidence"] > 0.0
 
 
 def test_legacy_classifier_general_query():
-    with warnings.catch_warnings():
-        warnings.simplefilter("ignore", DeprecationWarning)
-        result = classify_intent("How can I use this app?")
+    result = classify_intent("How can I use this app?")
     assert result["intent"] == "general_query"
     assert result["confidence"] > 0.0
 
 
 def test_legacy_classifier_unknown_intent():
-    with warnings.catch_warnings():
-        warnings.simplefilter("ignore", DeprecationWarning)
-        result = classify_intent("blabla xyz random text")
+    result = classify_intent("blabla xyz random text")
     assert result["intent"] == "unknown"
     assert result["confidence"] >= 0.0
 
 
 def test_legacy_classifier_empty_string():
-    with warnings.catch_warnings():
-        warnings.simplefilter("ignore", DeprecationWarning)
-        result = classify_intent("")
+    result = classify_intent("")
     assert result["intent"] == "unknown"
     assert result["confidence"] == 0.0
 
 
 def test_legacy_classifier_none_input():
-    with warnings.catch_warnings():
-        warnings.simplefilter("ignore", DeprecationWarning)
-        result = classify_intent(None)
+    result = classify_intent(None)
     assert result["intent"] == "unknown"
     assert result["confidence"] == 0.0
 
 
 def test_legacy_classifier_special_characters_cleanup():
-    with warnings.catch_warnings():
-        warnings.simplefilter("ignore", DeprecationWarning)
-        result = classify_intent("!!! LOGIN??? ###")
+    result = classify_intent("!!! LOGIN??? ###")
     assert result["intent"] == "login_issue"
     assert result["confidence"] > 0.0
