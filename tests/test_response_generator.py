@@ -2,6 +2,7 @@
 Tests for response generation service.
 
 Tests cover all intent types, priority order, and edge cases.
+Version: 3.3 - Response Generation Tests
 """
 
 import pytest

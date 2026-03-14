@@ -10,6 +10,7 @@ Priority order:
 3. Fallback response
 
 Reference: Technical Spec § 9.3 (Response Generation)
+Version: 3.3 - Response Generation Implementation
 """
 
 from typing import Optional
