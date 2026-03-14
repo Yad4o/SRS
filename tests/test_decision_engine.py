@@ -6,7 +6,8 @@ Version: 3.4 - Decision Engine Tests
 """
 
 import pytest
-from app.services.decision_engine import DecisionEngine, ResolutionDecision, Settings, decide_resolution, get_confidence_threshold, set_confidence_threshold
+from app.services.decision_engine import DecisionEngine, ResolutionDecision, decide_resolution, get_confidence_threshold, set_confidence_threshold
+from app.core.config import settings
 
 
 class TestDecisionEngine:
@@ -35,6 +36,15 @@ class TestDecisionEngine:
         with pytest.raises(ValueError) as exc_info:
             DecisionEngine(confidence_threshold=-0.1)
         assert "confidence_threshold must be between 0.0 and 1.0" in str(exc_info.value)
+        
+        # Boolean values should be rejected
+        with pytest.raises(ValueError) as exc_info:
+            DecisionEngine(confidence_threshold=True)
+        assert "confidence_threshold must be a numeric value between 0.0 and 1.0" in str(exc_info.value)
+        
+        with pytest.raises(ValueError) as exc_info:
+            DecisionEngine(confidence_threshold=False)
+        assert "confidence_threshold must be a numeric value between 0.0 and 1.0" in str(exc_info.value)
     
     def test_decide_resolution_auto_resolve(self):
         """Test auto-resolve decision."""
@@ -76,6 +86,10 @@ class TestDecisionEngine:
         assert engine.decide_resolution("high") == "ESCALATE"
         assert engine.decide_resolution([]) == "ESCALATE"
         assert engine.decide_resolution({}) == "ESCALATE"
+        
+        # Boolean types should escalate (bool is subclass of int but should be rejected)
+        assert engine.decide_resolution(True) == "ESCALATE"
+        assert engine.decide_resolution(False) == "ESCALATE"
     
     def test_decide_resolution_invalid_confidence_values(self):
         """Test invalid confidence values."""
@@ -134,6 +148,15 @@ class TestDecisionEngine:
         with pytest.raises(ValueError) as exc_info:
             engine.set_threshold(-0.1)
         assert "threshold must be between 0.0 and 1.0" in str(exc_info.value)
+        
+        # Boolean values should be rejected
+        with pytest.raises(ValueError) as exc_info:
+            engine.set_threshold(True)
+        assert "threshold must be a numeric value between 0.0 and 1.0" in str(exc_info.value)
+        
+        with pytest.raises(ValueError) as exc_info:
+            engine.set_threshold(False)
+        assert "threshold must be a numeric value between 0.0 and 1.0" in str(exc_info.value)
     
     def test_threshold_affects_decisions(self):
         """Test that changing threshold affects decisions."""
@@ -157,12 +180,12 @@ class TestSettings:
     
     def test_default_settings_threshold(self):
         """Test default settings threshold."""
-        assert Settings.CONFIDENCE_THRESHOLD_AUTO_RESOLVE == 0.75
+        assert settings.CONFIDENCE_THRESHOLD_AUTO_RESOLVE == 0.75
     
     def test_global_engine_uses_settings(self):
         """Test that global engine uses default settings."""
         from app.services.decision_engine import decision_engine
-        assert decision_engine.get_threshold() == Settings.CONFIDENCE_THRESHOLD_AUTO_RESOLVE
+        assert decision_engine.get_threshold() == settings.CONFIDENCE_THRESHOLD_AUTO_RESOLVE
 
 
 class TestConvenienceFunctions:
@@ -180,29 +203,35 @@ class TestConvenienceFunctions:
         threshold = get_confidence_threshold()
         assert isinstance(threshold, float)
         assert 0.0 <= threshold <= 1.0
-        assert threshold == Settings.CONFIDENCE_THRESHOLD_AUTO_RESOLVE
+        assert threshold == settings.CONFIDENCE_THRESHOLD_AUTO_RESOLVE
     
     def test_set_threshold_function(self):
         """Test the set threshold convenience function."""
         original_threshold = get_confidence_threshold()
         
-        # Set new threshold
-        set_confidence_threshold(0.9)
-        assert get_confidence_threshold() == 0.9
-        
-        # Verify decisions use new threshold
-        assert decide_resolution(0.8) == "ESCALATE"
-        assert decide_resolution(0.95) == "AUTO_RESOLVE"
-        
-        # Restore original threshold
-        set_confidence_threshold(original_threshold)
-        assert get_confidence_threshold() == original_threshold
+        try:
+            # Set new threshold
+            set_confidence_threshold(0.9)
+            assert get_confidence_threshold() == 0.9
+            
+            # Verify decisions use new threshold
+            assert decide_resolution(0.8) == "ESCALATE"
+            assert decide_resolution(0.95) == "AUTO_RESOLVE"
+        finally:
+            # Always restore original threshold
+            set_confidence_threshold(original_threshold)
+            assert get_confidence_threshold() == original_threshold
     
     def test_set_threshold_function_invalid(self):
         """Test setting invalid threshold via convenience function."""
         with pytest.raises(ValueError) as exc_info:
             set_confidence_threshold(1.5)
         assert "threshold must be between 0.0 and 1.0" in str(exc_info.value)
+        
+        # Boolean values should be rejected
+        with pytest.raises(ValueError) as exc_info:
+            set_confidence_threshold(True)
+        assert "threshold must be a numeric value between 0.0 and 1.0" in str(exc_info.value)
 
 
 class TestDecisionEngineEdgeCases:
@@ -270,11 +299,11 @@ class TestDecisionEngineIntegration:
     def test_integration_with_settings(self):
         """Test integration with settings module."""
         # Create engine with settings
-        engine = DecisionEngine(Settings.CONFIDENCE_THRESHOLD_AUTO_RESOLVE)
+        engine = DecisionEngine(settings.CONFIDENCE_THRESHOLD_AUTO_RESOLVE)
         
         # Test decisions align with settings
-        assert engine.decide_resolution(Settings.CONFIDENCE_THRESHOLD_AUTO_RESOLVE) == "AUTO_RESOLVE"
-        assert engine.decide_resolution(Settings.CONFIDENCE_THRESHOLD_AUTO_RESOLVE - 0.01) == "ESCALATE"
+        assert engine.decide_resolution(settings.CONFIDENCE_THRESHOLD_AUTO_RESOLVE) == "AUTO_RESOLVE"
+        assert engine.decide_resolution(settings.CONFIDENCE_THRESHOLD_AUTO_RESOLVE - 0.01) == "ESCALATE"
     
     def test_full_workflow_simulation(self):
         """Test a full workflow simulation."""

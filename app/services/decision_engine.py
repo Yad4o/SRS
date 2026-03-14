@@ -12,6 +12,8 @@ Version: 3.4 - Decision Engine Implementation
 
 from typing import Literal
 from enum import Enum
+from numbers import Real
+from app.core.config import settings
 
 
 class ResolutionDecision(Enum):
@@ -28,16 +30,25 @@ class DecisionEngine:
     Acts as the safety gate for automated ticket resolution.
     """
     
-    def __init__(self, confidence_threshold: float = 0.75):
+    def __init__(self, confidence_threshold: float = None):
         """
         Initialize the decision engine.
         
         Args:
             confidence_threshold: Minimum confidence score for auto-resolution (0.0-1.0)
+                                 If None, uses settings.CONFIDENCE_THRESHOLD_AUTO_RESOLVE
             
         Raises:
             ValueError: If confidence_threshold is not between 0.0 and 1.0
         """
+        if confidence_threshold is None:
+            confidence_threshold = settings.CONFIDENCE_THRESHOLD_AUTO_RESOLVE
+        
+        if not isinstance(confidence_threshold, Real) or isinstance(confidence_threshold, bool):
+            raise ValueError(
+                f"confidence_threshold must be a numeric value between 0.0 and 1.0, got {confidence_threshold}"
+            )
+        
         if not (0.0 <= confidence_threshold <= 1.0):
             raise ValueError(
                 f"confidence_threshold must be between 0.0 and 1.0, got {confidence_threshold}"
@@ -58,7 +69,7 @@ class DecisionEngine:
             Literal["AUTO_RESOLVE", "ESCALATE"]: Resolution decision
             
         Examples:
-            >>> engine = DecisionEngine(threshold=0.8)
+            >>> engine = DecisionEngine(confidence_threshold=0.8)
             >>> engine.decide_resolution(0.9)
             'AUTO_RESOLVE'
             >>> engine.decide_resolution(0.7)
@@ -66,8 +77,8 @@ class DecisionEngine:
             >>> engine.decide_resolution(1.5)  # Invalid confidence
             'ESCALATE'
         """
-        # Validation: confidence must be 0.0–1.0
-        if not isinstance(confidence, (int, float)):
+        # Validation: confidence must be 0.0-1.0
+        if not isinstance(confidence, Real) or isinstance(confidence, bool):
             return "ESCALATE"
         
         if not (0.0 <= confidence <= 1.0):
@@ -98,6 +109,11 @@ class DecisionEngine:
         Raises:
             ValueError: If threshold is not between 0.0 and 1.0
         """
+        if not isinstance(threshold, Real) or isinstance(threshold, bool):
+            raise ValueError(
+                f"threshold must be a numeric value between 0.0 and 1.0, got {threshold}"
+            )
+        
         if not (0.0 <= threshold <= 1.0):
             raise ValueError(
                 f"threshold must be between 0.0 and 1.0, got {threshold}"
@@ -106,16 +122,8 @@ class DecisionEngine:
         self.confidence_threshold = threshold
 
 
-# Settings configuration
-class Settings:
-    """Settings configuration for the decision engine."""
-    
-    # Default confidence threshold for auto-resolution
-    CONFIDENCE_THRESHOLD_AUTO_RESOLVE = 0.75
-
-
 # Global instance with default settings
-decision_engine = DecisionEngine(Settings.CONFIDENCE_THRESHOLD_AUTO_RESOLVE)
+decision_engine = DecisionEngine()
 
 
 def decide_resolution(confidence: float) -> Literal["AUTO_RESOLVE", "ESCALATE"]:
