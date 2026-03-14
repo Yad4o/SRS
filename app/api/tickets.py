@@ -34,6 +34,11 @@ from app.schemas.ticket import (
 )
 from app.db.session import get_db
 from app.models.ticket import Ticket
+from app.services.classifier import classify_intent
+from app.services.similarity_search import find_similar_ticket
+from app.services.decision_engine import decide_resolution
+from app.services.response_generator import generate_response
+from app.services.decision import ResolutionDecision
 from fastapi import status
 
 # Configure logging
@@ -79,6 +84,69 @@ def create_ticket(
         
         # Save to database
         db.add(ticket)
+        db.flush()
+        db.refresh(ticket)
+        
+        # Step 3: Run AI pipeline with error handling
+        try:
+            # Classify intent and confidence
+            classification_result = classify_intent(ticket.message)
+            ticket.intent = classification_result.get("intent")
+            ticket.confidence = classification_result.get("confidence")
+            
+            # Fetch resolved tickets for similarity search (limited to recent tickets)
+            resolved_tickets = db.query(Ticket).filter(
+                Ticket.status == "auto_resolved",
+                Ticket.response.isnot(None)
+            ).order_by(
+                Ticket.created_at.desc()
+            ).limit(50).all()  # Limit to 50 most recent resolved tickets
+            
+            # Convert to list of dicts for similarity search
+            resolved_tickets_list = [
+                {
+                    "message": t.message,
+                    "response": t.response
+                }
+                for t in resolved_tickets
+            ]
+            
+            # Search for similar tickets
+            similar_result = find_similar_ticket(ticket.message, resolved_tickets_list)
+            similar_solution = similar_result.get("matched_response") if similar_result else None
+            
+            # Run decision engine
+            decision = decide_resolution(ticket.confidence)
+            
+            if decision == ResolutionDecision.AUTO_RESOLVE:
+                # Auto-resolve with generated response
+                response = generate_response(ticket.intent, similar_solution)
+                ticket.response = response
+                ticket.status = "auto_resolved"
+                
+                logger.info(
+                    f"Ticket {ticket.id} auto-resolved with confidence {ticket.confidence:.2f}"
+                )
+            else:
+                # Escalate to human
+                ticket.status = "escalated"
+                
+                logger.info(
+                    f"Ticket {ticket.id} escalated with confidence {ticket.confidence:.2f}"
+                )
+            
+        except Exception as ai_error:
+            # Handle AI failures gracefully - escalate to human
+            logger.exception(f"AI pipeline failed for ticket {ticket.id}: {ai_error}")
+            ticket.intent = None
+            ticket.confidence = None
+            ticket.status = "escalated"  # Always escalate on AI failure
+            
+            logger.warning(
+                f"Ticket {ticket.id} escalated due to AI pipeline failure"
+            )
+        
+        # Step 4: Save final ticket state
         db.commit()
         db.refresh(ticket)
         
