@@ -20,7 +20,7 @@ class TestDecisionEngine:
     def test_initialization_default_threshold(self):
         """Test initialization with default threshold."""
         engine = DecisionEngine()
-        assert engine.confidence_threshold == 0.75
+        assert engine.confidence_threshold == settings.CONFIDENCE_THRESHOLD_AUTO_RESOLVE
     
     def test_initialization_custom_threshold(self):
         """Test initialization with custom threshold."""
@@ -199,7 +199,7 @@ class TestConvenienceFunctions:
         assert decide_resolution(0.75) == "AUTO_RESOLVE"
     
     def test_get_threshold_function(self):
-        """Test the get threshold convenience function."""
+        """Test get threshold convenience function."""
         threshold = get_confidence_threshold()
         assert isinstance(threshold, float)
         assert 0.0 <= threshold <= 1.0

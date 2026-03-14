@@ -10,7 +10,7 @@ Reference: Technical Spec § 9.4 (Decision Engine)
 Version: 3.4 - Decision Engine Implementation
 """
 
-from typing import Literal
+from typing import Literal, Optional
 from enum import Enum
 from numbers import Real
 from app.core.config import settings
@@ -30,7 +30,7 @@ class DecisionEngine:
     Acts as the safety gate for automated ticket resolution.
     """
     
-    def __init__(self, confidence_threshold: float = None):
+    def __init__(self, confidence_threshold: Optional[float] = None):
         """
         Initialize the decision engine.
         
