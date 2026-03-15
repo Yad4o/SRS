@@ -138,7 +138,9 @@ class RateLimitError(BaseAPIException):
 
 
 # Error type to HTTP status code mapping
-ERROR_STATUS_MAPPING = {
+# Note: AIServiceError maps to 200 in ERROR_RESPONSE_STATUS_MAPPING because the handler
+# returns 200 with fallback content, even though AIServiceError itself defines status_code=503
+ERROR_RESPONSE_STATUS_MAPPING = {
     ValidationError: 400,
     AuthenticationError: 401,
     AuthorizationError: 403,

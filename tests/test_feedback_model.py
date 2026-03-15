@@ -19,10 +19,6 @@ def create_ticket(db: Session, message: str = "Test ticket") -> Ticket:
 def create_feedback_seed():
     """Helper function to create tickets and feedback for testing."""
     with Session(engine) as db:
-        db.query(Feedback).delete()
-        db.query(Ticket).delete()
-        db.commit()
-
         tickets = []
         for i in range(4):
             ticket = Ticket(message=f"Test ticket {i+1} for feedback queries")
@@ -42,7 +38,13 @@ def create_feedback_seed():
             db.add(feedback)
         db.commit()
 
-        return tickets, feedback_entries
+        # Return primitive identifiers instead of ORM instances
+        ticket_ids = [t.id for t in tickets]
+        feedback_data = [
+            {"ticket_id": f.ticket_id, "rating": f.rating, "resolved": f.resolved} 
+            for f in feedback_entries
+        ]
+        return ticket_ids, feedback_data
 
 
 class TestFeedbackModel:
@@ -148,15 +150,23 @@ class TestFeedbackModel:
 
     def test_feedback_foreign_key_constraint(self):
         """Should enforce foreign key constraint to tickets table."""
-        # Enable FK enforcement at the engine level for this test
-        @event.listens_for(engine, "connect")
+        # Create a temporary local engine for this test to avoid affecting other tests
+        from sqlalchemy import create_engine, text
+        from app.db.session import Base
+        
+        local_engine = create_engine("sqlite:///:memory:")
+        Base.metadata.create_all(bind=local_engine)
+        
+        # Enable FK enforcement at engine level for this test
+        @event.listens_for(local_engine, "connect")
         def set_sqlite_pragma(dbapi_conn, _):
             cursor = dbapi_conn.cursor()
             cursor.execute("PRAGMA foreign_keys=ON")
             cursor.close()
 
         try:
-            with Session(engine) as db:
+            with Session(local_engine) as db:
+                # Explicitly enable foreign keys for this session
                 db.execute(text("PRAGMA foreign_keys = ON"))
                 feedback = Feedback(ticket_id=99999, rating=5, resolved=True)
                 db.add(feedback)
@@ -165,7 +175,9 @@ class TestFeedbackModel:
                     db.commit()
         finally:
             # Remove the listener so it doesn't affect other tests
-            event.remove(engine, "connect", set_sqlite_pragma)
+            event.remove(local_engine, "connect", set_sqlite_pragma)
+            # Dispose of the local engine
+            local_engine.dispose()
 
     # -------------------------------------------------------------------------
     # Unique constraint — unchanged, already creates its own ticket

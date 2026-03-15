@@ -277,18 +277,18 @@ class TestErrorStatusMapping:
 
     def test_error_status_codes(self):
         """Test that all error types have correct status codes."""
-        from app.core.exceptions import ERROR_STATUS_MAPPING
+        from app.core.exceptions import ERROR_RESPONSE_STATUS_MAPPING
         
-        assert ERROR_STATUS_MAPPING[ValidationError] == 400
-        assert ERROR_STATUS_MAPPING[AuthenticationError] == 401
-        assert ERROR_STATUS_MAPPING[AuthorizationError] == 403
-        assert ERROR_STATUS_MAPPING[NotFoundError] == 404
-        assert ERROR_STATUS_MAPPING[InternalError] == 500
-        assert ERROR_STATUS_MAPPING[AIServiceError] == 200  # Special case
+        assert ERROR_RESPONSE_STATUS_MAPPING[ValidationError] == 400
+        assert ERROR_RESPONSE_STATUS_MAPPING[AuthenticationError] == 401
+        assert ERROR_RESPONSE_STATUS_MAPPING[AuthorizationError] == 403
+        assert ERROR_RESPONSE_STATUS_MAPPING[NotFoundError] == 404
+        assert ERROR_RESPONSE_STATUS_MAPPING[InternalError] == 500
+        assert ERROR_RESPONSE_STATUS_MAPPING[AIServiceError] == 200  # Special case
 
     def test_all_exceptions_have_status_codes(self):
         """Test that all custom exceptions have mapped status codes."""
-        from app.core.exceptions import ERROR_STATUS_MAPPING
+        from app.core.exceptions import ERROR_RESPONSE_STATUS_MAPPING
         
         # Check that all our custom exceptions are mapped
         exception_classes = [
@@ -301,9 +301,9 @@ class TestErrorStatusMapping:
         ]
         
         for exc_class in exception_classes:
-            assert exc_class in ERROR_STATUS_MAPPING
-            assert isinstance(ERROR_STATUS_MAPPING[exc_class], int)
-            assert 100 <= ERROR_STATUS_MAPPING[exc_class] <= 599
+            assert exc_class in ERROR_RESPONSE_STATUS_MAPPING
+            assert isinstance(ERROR_RESPONSE_STATUS_MAPPING[exc_class], int)
+            assert 100 <= ERROR_RESPONSE_STATUS_MAPPING[exc_class] <= 599
 
 
 class TestProductionErrorHandling:

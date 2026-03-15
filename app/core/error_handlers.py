@@ -116,6 +116,11 @@ async def http_exception_handler(request: Request, exc: HTTPException) -> JSONRe
             app_exc = error_class(message=exc.detail)
     except TypeError:
         # Fallback to generic InternalError if constructor fails
+        logger.error(
+            f"Failed to create {error_class.__name__} from {type(exc).__name__}: "
+            f"status_code={getattr(exc, 'status_code', None)}, "
+            f"detail={getattr(exc, 'detail', None)}"
+        )
         app_exc = InternalError(message=exc.detail)
     
     return JSONResponse(

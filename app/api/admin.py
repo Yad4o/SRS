@@ -94,7 +94,7 @@ def get_metrics(
         - feedback_resolution_rate: Percentage of feedback indicating resolution
         
     Raises:
-        HTTPException: 403 if not admin, 500 for database errors
+        AuthorizationError: 403 if not admin, 500 for database errors
     """
     try:
         # Ticket statistics
@@ -185,7 +185,7 @@ def list_all_tickets(
         - filters: Applied filters
         
     Raises:
-        HTTPException: 403 if not admin, 400 for invalid status, 500 for database errors
+        AuthorizationError: 403 if not admin, ValidationError for invalid status, 500 for database errors
     """
     # Validate status filter if provided
     if status_filter is not None and status_filter not in ALLOWED_TICKET_STATUSES:

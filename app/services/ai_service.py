@@ -29,6 +29,7 @@ from abc import ABC, abstractmethod
 
 from app.core.exceptions import AIServiceError
 from app.core.error_handlers import handle_ai_service_failure
+from app.services.classifier import classify_intent
 
 logger = logging.getLogger(__name__)
 
@@ -127,7 +128,7 @@ class TicketClassificationService(BaseAIService):
         """
         def ai_classify(message: str) -> Dict[str, Any]:
             # Simulate AI classification (in real implementation, this would call an AI model)
-            return classifier.classify_intent(message)
+            return classify_intent(message)
         
         return self.safe_execute(
             operation="ticket_classification",
@@ -264,22 +265,25 @@ def demonstrate_ai_service_fallback():
     print("\n=== AI Service Failure with Fallback ===")
     
     # Monkey patch to simulate failure at the classify_intent level
-    original_classify_intent = classifier.classify_intent
+    from app.services.classifier import classify_intent as original_classify_intent
     def failing_classify_intent(*args, **kwargs):
         raise Exception("AI model temporarily unavailable")
     
-    classifier.classify_intent = failing_classify_intent
+    # Temporarily replace the function
+    import app.services.classifier
+    app.services.classifier.classify_intent = failing_classify_intent
     
-    result = classifier.classify_ticket("I can't login to my account")
-    print(f"Classification with fallback: {result}")
-    
-    # Extract actual classification from wrapped response
-    if isinstance(result, dict) and "data" in result:
-        actual_result = result["data"]
-        print(f"Actual classification with fallback: {actual_result}")
-    
-    # Restore original method
-    classifier.classify_intent = original_classify_intent
+    try:
+        result = classifier.classify_ticket("I can't login to my account")
+        print(f"Classification with fallback: {result}")
+        
+        # Extract actual classification from wrapped response
+        if isinstance(result, dict) and "data" in result:
+            actual_result = result["data"]
+            print(f"Actual classification: {actual_result}")
+    finally:
+        # Restore original function
+        app.services.classifier.classify_intent = original_classify_intent
 
 
 if __name__ == "__main__":
