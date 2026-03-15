@@ -96,11 +96,14 @@ def test_find_similar_ticket_multiple_matches():
     result = find_similar_ticket(new_message, resolved_tickets, similarity_threshold=0.2)
     
     assert result is not None
-    # Should match the most similar one
+    # Should match the most similar one (Password reset required for login)
     assert result["similarity_score"] >= 0.2
     assert "matched_text" in result
     assert "similarity_score" in result
     assert "ticket" in result
+    # Verify it matches the expected winner
+    assert result["ticket"]["message"] == "Password reset required for login"
+    assert result["ticket"]["response"] == "Reset password"
 
 
 def test_find_similar_ticket_custom_threshold():

@@ -21,7 +21,19 @@ def decide_resolution(
     - confidence < 0.75  -> ESCALATE
     - confidence == 0.75 -> AUTO_RESOLVE
     - confidence > 0.75  -> AUTO_RESOLVE
+    - If similar solution found, prefer AUTO_RESOLVE even with lower confidence
+    
+    Args:
+        confidence: Confidence score from intent classification
+        similar_solution_found: Whether a similar resolved ticket was found
+        
+    Returns:
+        ResolutionDecision: AUTO_RESOLVE or ESCALATE
     """
+
+    # If similar solution found, prefer auto-resolve for consistency
+    if similar_solution_found:
+        return ResolutionDecision.AUTO_RESOLVE
 
     # Low confidence → escalate
     if confidence < AUTO_RESOLVE_CONFIDENCE_THRESHOLD:
