@@ -390,9 +390,12 @@ class TestTicketAPIIntegration:
 
     def test_status_filtering_workflow(self):
         """Test status filtering workflow with AI processing."""
-        # Create several tickets
+        # Create several tickets and validate each creation
+        created_tickets = []
         for i in range(3):
-            client.post("/tickets/", json={"message": f"Ticket {i+1}"})
+            response = client.post("/tickets/", json={"message": f"Ticket {i+1}"})
+            assert response.status_code == 201, f"Failed to create ticket {i+1}"
+            created_tickets.append(response.json())
         
         # Get all tickets
         all_response = client.get("/tickets/")
@@ -418,6 +421,12 @@ class TestTicketAPIIntegration:
             assert ticket["status"] == "escalated"
         for ticket in auto_resolved_tickets:
             assert ticket["status"] == "auto_resolved"
+        
+        # Verify we created the expected number of tickets
+        assert len(created_tickets) == 3
+        for ticket in created_tickets:
+            assert ticket["status"] in ["auto_resolved", "escalated"]
+            assert ticket["message"].startswith("Ticket")
 
 
 class TestTicketsHealth:
