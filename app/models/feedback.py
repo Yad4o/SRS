@@ -39,6 +39,13 @@ class Feedback(Base):
 
     __tablename__ = "feedback"
 
+    # NOTE:
+    # -----
+    # This UniqueConstraint is only created automatically for new databases.
+    # The app's init_db() path uses Base.metadata.create_all(), which does NOT
+    # apply ALTERs to existing tables. For existing deployments (or a checked-in
+    # SQLite database), you MUST run an explicit migration or fully recreate the
+    # database schema to ensure this uniqueness is enforced at the DB level.
     __table_args__ = (
         UniqueConstraint('ticket_id', name='uq_feedback_ticket_id'),
     )
