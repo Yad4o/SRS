@@ -194,8 +194,9 @@ class TestAdminAPI:
         
         assert response.status_code == 403
         error_detail = response.json()
-        assert "Access denied" in error_detail["detail"]
-        assert "Admin role required" in error_detail["detail"]
+        assert "error" in error_detail
+        assert error_detail["error"]["code"] == "AUTHORIZATION_ERROR"
+        assert "Access denied" in error_detail["error"]["message"]
 
     def test_admin_metrics_no_token(self, admin_client):
         """Test admin metrics endpoint without authentication."""
@@ -308,8 +309,9 @@ class TestAdminAPI:
         
         assert response.status_code == 403
         error_detail = response.json()
-        assert "Access denied" in error_detail["detail"]
-        assert "Admin role required" in error_detail["detail"]
+        assert "error" in error_detail
+        assert error_detail["error"]["code"] == "AUTHORIZATION_ERROR"
+        assert "Access denied" in error_detail["error"]["message"]
 
     def test_admin_tickets_list_invalid_status(self, admin_client, admin_token):
         """Test admin tickets list with invalid status filter."""
@@ -318,8 +320,10 @@ class TestAdminAPI:
         
         assert response.status_code == 400
         error_detail = response.json()
-        assert "Invalid status" in error_detail["detail"]
-        assert "invalid_status" in error_detail["detail"]
+        assert "error" in error_detail
+        assert error_detail["error"]["code"] == "VALIDATION_ERROR"
+        assert "Invalid status" in error_detail["error"]["message"]
+        assert "invalid_status" in error_detail["error"]["message"]
 
     def test_admin_tickets_list_no_token(self, admin_client):
         """Test admin tickets list endpoint without authentication."""

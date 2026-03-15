@@ -73,9 +73,11 @@ class TestCreateTicket:
         
         response = client.post("/tickets/", json=ticket_data)
         
-        assert response.status_code == 422  # Validation error
-        errors = response.json()["detail"]
-        assert any(error["loc"] == ["body", "message"] for error in errors)
+        assert response.status_code == 400  # Validation error
+        error_data = response.json()
+        assert "error" in error_data
+        assert error_data["error"]["code"] == "VALIDATION_ERROR"
+        assert "validation_errors" in error_data["error"]["details"]
 
     def test_create_ticket_long_message(self):
         """Test ticket creation with very long message."""
@@ -111,7 +113,7 @@ class TestCreateTicket:
         """Test ticket creation with invalid JSON."""
         response = client.post("/tickets/", data="invalid json")
         
-        assert response.status_code == 422
+        assert response.status_code == 400
 
     def test_create_ticket_database_failure_simulation(self):
         """Test ticket creation with simulated database failure."""
@@ -128,11 +130,12 @@ class TestCreateTicket:
             data = response.json()
             
             # Verify generic error message (no internal details exposed)
-            assert "Internal server error occurred while creating ticket" in data["detail"]
+            assert "error" in data
+            assert "Internal server error occurred while creating ticket" in data["error"]["message"]
             # Should not expose internal details
-            assert "Database connection failed" not in data["detail"]
-            assert "sqlalchemy" not in data["detail"].lower()
-            assert "database" not in data["detail"].lower()
+            assert "Database connection failed" not in data["error"]["message"]
+            assert "sqlalchemy" not in data["error"]["message"].lower()
+            assert "database" not in data["error"]["message"].lower()
 
 
 class TestListTickets:
@@ -261,14 +264,14 @@ class TestGetTicket:
         assert response.status_code == 404
         data = response.json()
         
-        assert "detail" in data
-        assert "not found" in data["detail"].lower()
+        assert "error" in data
+        assert "not found" in data["error"]["message"].lower()
 
     def test_get_ticket_invalid_id(self):
         """Test getting a ticket with invalid ID."""
         response = client.get("/tickets/invalid_id")
         
-        assert response.status_code == 422  # Validation error
+        assert response.status_code == 400  # Validation error
 
     def test_get_ticket_zero_id(self):
         """Test getting a ticket with ID 0."""

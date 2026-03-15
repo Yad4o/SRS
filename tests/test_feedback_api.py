@@ -140,7 +140,8 @@ class TestFeedbackAPI:
         
         assert response.status_code == 400
         error_detail = response.json()
-        assert "not resolved" in error_detail["detail"].lower()
+        assert "error" in error_detail
+        assert "not resolved" in error_detail["error"]["message"].lower()
 
     def test_create_feedback_duplicate(self, client, db_session):
         """Test duplicate feedback prevention."""
@@ -171,7 +172,8 @@ class TestFeedbackAPI:
         
         assert response2.status_code == 409
         error_detail = response2.json()
-        assert "already exists" in error_detail["detail"].lower()
+        assert "error" in error_detail
+        assert "already exists" in error_detail["error"]["message"].lower()
 
     def test_create_feedback_ticket_not_found(self, client, db_session):
         """Test feedback creation with non-existent ticket."""
@@ -185,7 +187,8 @@ class TestFeedbackAPI:
         
         assert response.status_code == 404
         error_detail = response.json()
-        assert "not found" in error_detail["detail"].lower()
+        assert "error" in error_detail
+        assert "not found" in error_detail["error"]["message"].lower()
 
     def test_create_feedback_invalid_rating(self, client, db_session):
         """Test feedback creation with invalid rating."""
@@ -209,7 +212,7 @@ class TestFeedbackAPI:
         
         response = client.post("/feedback/", json=feedback_data)
         
-        assert response.status_code == 422  # Validation error
+        assert response.status_code == 400  # Validation error
 
     def test_get_feedback_by_ticket_id_success(self, client, db_session):
         """Test successful feedback retrieval by ticket ID."""
@@ -252,7 +255,8 @@ class TestFeedbackAPI:
         
         assert response.status_code == 404
         error_detail = response.json()
-        assert "no feedback found" in error_detail["detail"].lower()
+        assert "error" in error_detail
+        assert "no feedback found" in error_detail["error"]["message"].lower()
 
     def test_get_feedback_by_query_success(self, client, db_session):
         """Test successful feedback retrieval using query parameter."""
@@ -293,7 +297,8 @@ class TestFeedbackAPI:
         
         assert response.status_code == 404
         error_detail = response.json()
-        assert "no feedback found" in error_detail["detail"].lower()
+        assert "error" in error_detail
+        assert "no feedback found" in error_detail["error"]["message"].lower()
 
     def test_feedback_schema_validation(self, client, db_session):
         """Test feedback schema validation."""
@@ -305,7 +310,7 @@ class TestFeedbackAPI:
         
         response = client.post("/feedback/", json=invalid_data)
         
-        assert response.status_code == 422  # Validation error
+        assert response.status_code == 400  # Validation error
         
         # Test invalid rating range
         invalid_rating_data = {
@@ -316,7 +321,7 @@ class TestFeedbackAPI:
         
         response = client.post("/feedback/", json=invalid_rating_data)
         
-        assert response.status_code == 422  # Validation error
+        assert response.status_code == 400  # Validation error
 
     def test_feedback_end_to_end_workflow(self, client, db_session):
         """Test complete feedback workflow."""

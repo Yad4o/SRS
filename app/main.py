@@ -27,6 +27,7 @@ from app.api import auth, demo, tickets, feedback, admin
 
 from app.core.config import settings
 from app.db.session import engine, init_db
+from app.core.error_handlers import setup_exception_handlers
 
 
 # --------------------------------------------------
@@ -99,6 +100,11 @@ def create_app() -> FastAPI:
         allow_methods=["*"],
         allow_headers=["*"],
     )
+
+    # --------------------------------------------------
+    # Exception Handler Registration
+    # --------------------------------------------------
+    setup_exception_handlers(app)
 
     # --------------------------------------------------
     # Router Registration

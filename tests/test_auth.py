@@ -86,7 +86,7 @@ class TestAuthEndpoints:
             "/auth/login",
             json={"email": "", "password": "Password123!"}
         )
-        assert response.status_code == 422  # EmailStr validation error
+        assert response.status_code == 400  # EmailStr validation error
 
     def test_register_whitespace_emails(self, test_client):
         """Test registration with emails gets normalized correctly."""
@@ -107,7 +107,7 @@ class TestAuthEndpoints:
             json={"email": "   ", "password": "Password123!"}
         )
         # Should fail at EmailStr validation level
-        assert response.status_code == 422
+        assert response.status_code == 400
 
     def test_register_leading_trailing_whitespace_email(self, test_client):
         """Test registration with leading/trailing whitespace in email."""
@@ -128,7 +128,7 @@ class TestAuthEndpoints:
             json={"email": "test@example.com", "password": "   "}
         )
         # Should fail at schema validation level
-        assert response.status_code == 422
+        assert response.status_code == 400
 
     def test_register_existing_email_improved_message(self, test_client):
         """Test registration with existing email returns specific message."""
@@ -146,7 +146,8 @@ class TestAuthEndpoints:
         )
 
         assert response.status_code == 400
-        assert "Email already registered" in response.json()["detail"]
+        assert "error" in response.json()
+        assert "Email already registered" in response.json()["error"]["message"]
 
     def test_register_weak_password(self, test_client):
         """Test registration with weak password fails validation."""
@@ -156,7 +157,7 @@ class TestAuthEndpoints:
         )
 
         # Should fail at schema validation level
-        assert response.status_code == 422
+        assert response.status_code == 400
 
     def test_register_long_password(self, test_client):
         """Test registration with very long password (over 72 bytes)."""
@@ -306,7 +307,8 @@ class TestAuthEndpoints:
         )
 
         assert response.status_code == 401
-        assert "Incorrect email or password" in response.json()["detail"]
+        assert "error" in response.json()
+        assert "Incorrect email or password" in response.json()["error"]["message"]
 
     def test_login_invalid_password(self, test_client):
         """Test login with wrong password returns 401."""
@@ -324,7 +326,8 @@ class TestAuthEndpoints:
         )
 
         assert response.status_code == 401
-        assert "Incorrect email or password" in response.json()["detail"]
+        assert "error" in response.json()
+        assert "Incorrect email or password" in response.json()["error"]["message"]
 
     def test_protected_route_without_token(self, test_client):
         """Test accessing protected route without token returns 401."""
