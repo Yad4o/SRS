@@ -117,13 +117,10 @@ def get_metrics(
         # Feedback statistics
         total_feedback = db.query(Feedback).count()
         
-        feedback_stats = db.query(
-            func.avg(Feedback.rating).label('avg_rating'),
-            func.sum(func.cast(Feedback.resolved, Integer)).label('resolved_count')
-        ).first()
-        
-        average_rating = float(feedback_stats.avg_rating) if feedback_stats.avg_rating else 0.0
-        resolved_feedback_count = feedback_stats.resolved_count or 0
+        # Use a simpler approach for counting resolved feedback
+        resolved_feedback_count = db.query(Feedback).filter(Feedback.resolved == True).count()
+        avg_rating_result = db.query(func.avg(Feedback.rating)).scalar()
+        average_rating = float(avg_rating_result) if avg_rating_result else 0.0
         
         feedback_resolution_rate = (resolved_feedback_count / total_feedback * 100) if total_feedback > 0 else 0
         
@@ -178,7 +175,7 @@ def list_all_tickets(
     Args:
         current_user: Admin user (from require_admin dependency)
         db: Database session dependency
-        status_filter: Optional filter for ticket status (from query parameter "status_filter")
+        status_filter: Optional filter for ticket status (from query parameter "status")
         page: Page number for pagination
         limit: Number of items per page
         

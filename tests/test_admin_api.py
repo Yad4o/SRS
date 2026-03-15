@@ -245,10 +245,6 @@ class TestAdminAPI:
 
     def test_admin_tickets_list_with_filter(self, admin_client, admin_token, db_session):
         """Test admin tickets list with status filter."""
-        # Clean up any existing data first
-        db_session.query(Ticket).delete()
-        db_session.commit()
-        
         # Create test tickets
         tickets = [
             Ticket(message="Ticket 1", status="auto_resolved", intent="login_issue", confidence=0.9),
