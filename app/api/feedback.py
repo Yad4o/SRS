@@ -23,13 +23,13 @@ DO NOT:
 - Change ticket resolution status here
 """
 
-from typing import List, Optional
+from typing import Optional
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.orm import Session
 from sqlalchemy.exc import IntegrityError
 import logging
 
-from app.schemas.feedback import FeedbackCreate, FeedbackResponse, FeedbackList
+from app.schemas.feedback import FeedbackCreate, FeedbackResponse
 from app.db.session import get_db
 from app.models.feedback import Feedback
 from app.models.ticket import Ticket
@@ -174,7 +174,7 @@ def get_feedback_by_ticket_id(
         )
 
 
-@router.get("/", response_model=Optional[FeedbackResponse])
+@router.get("/", response_model=FeedbackResponse)
 def get_feedback_by_query(
     ticket_id: int = Query(..., description="ID of the ticket to get feedback for"),
     db: Session = Depends(get_db),
@@ -189,20 +189,26 @@ def get_feedback_by_query(
         db: Database session dependency
         
     Returns:
-        FeedbackResponse: Feedback record for the ticket, or null if not found
+        FeedbackResponse: Feedback record for the ticket
         
     Raises:
-        HTTPException: If database operation fails
+        HTTPException: If feedback not found or database operation fails
     """
     try:
         # Get feedback for the ticket
         feedback = db.query(Feedback).filter(Feedback.ticket_id == ticket_id).first()
         
         if not feedback:
-            return None
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"No feedback found for ticket with ID {ticket_id}"
+            )
         
         return FeedbackResponse.model_validate(feedback)
         
+    except HTTPException:
+        # Re-raise HTTP exceptions
+        raise
     except Exception as e:
         logger.exception(f"Failed to retrieve feedback for ticket {ticket_id}")
         raise HTTPException(

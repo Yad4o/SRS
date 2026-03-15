@@ -108,5 +108,6 @@ class Ticket(Base):
     feedback = relationship(
         "Feedback",
         back_populates="ticket",
-        doc="Feedback records for this ticket",
+        uselist=False,
+        doc="Feedback record for this ticket (one-to-one)",
     )
