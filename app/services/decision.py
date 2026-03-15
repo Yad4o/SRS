@@ -1,43 +1,17 @@
-from enum import Enum
+"""
+app/services/decision.py
 
+Purpose:
+--------
+Decision engine — determines whether a ticket should be auto-resolved or escalated.
 
-class ResolutionDecision(str, Enum):
-    AUTO_RESOLVE = "auto_resolve"
-    ESCALATE = "escalate"
+Note:
+-----
+Canonical implementation lives in decision_engine.py.
+This module re-exports it to match the name defined in the Phase 3 spec.
+"""
 
+# Canonical implementation — delegates to decision_engine.py
+from app.services.decision_engine import decide_resolution, get_confidence_threshold, set_confidence_threshold
 
-# Confidence threshold
-AUTO_RESOLVE_CONFIDENCE_THRESHOLD = 0.75
-
-
-def decide_resolution(
-    confidence: float,
-    similar_solution_found: bool = False,
-):
-    """
-    Decide whether a ticket should be auto-resolved or escalated.
-
-    Rules (as per tests):
-    - confidence < 0.75  -> ESCALATE
-    - confidence == 0.75 -> AUTO_RESOLVE
-    - confidence > 0.75  -> AUTO_RESOLVE
-    - If similar solution found, prefer AUTO_RESOLVE even with lower confidence
-    
-    Args:
-        confidence: Confidence score from intent classification
-        similar_solution_found: Whether a similar resolved ticket was found
-        
-    Returns:
-        ResolutionDecision: AUTO_RESOLVE or ESCALATE
-    """
-
-    # If similar solution found, prefer auto-resolve for consistency
-    if similar_solution_found:
-        return ResolutionDecision.AUTO_RESOLVE
-
-    # Low confidence → escalate
-    if confidence < AUTO_RESOLVE_CONFIDENCE_THRESHOLD:
-        return ResolutionDecision.ESCALATE
-
-    # Edge case & high confidence → auto resolve
-    return ResolutionDecision.AUTO_RESOLVE
+__all__ = ["decide_resolution", "get_confidence_threshold", "set_confidence_threshold"]
