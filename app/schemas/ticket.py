@@ -75,9 +75,10 @@ class TicketResponse(BaseModel):
 
     id: int
     message: str
-    intent: Optional[str]
-    confidence: Optional[float]
+    intent: Optional[str] = None
+    confidence: Optional[float] = None
     status: str
+    response: Optional[str] = None
     created_at: datetime
 
     model_config = ConfigDict(from_attributes=True)
