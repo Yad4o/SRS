@@ -38,6 +38,7 @@ from app.services.classifier import classify_intent
 from app.services.similarity_search import find_similar_ticket
 from app.services.decision_engine import decide_resolution
 from app.services.response_generator import generate_response
+from app.core.config import settings
 from fastapi import status
 
 # Configure logging
@@ -120,7 +121,7 @@ def create_ticket(
             similar_result = find_similar_ticket(
                 ticket.message, 
                 resolved_tickets_data,
-                similarity_threshold=0.3
+                similarity_threshold=settings.SIMILARITY_THRESHOLD
             )
             
             # Make decision

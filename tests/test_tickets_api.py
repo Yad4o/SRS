@@ -251,7 +251,7 @@ class TestGetTicket:
         
         assert data["id"] == ticket_id
         assert data["message"] == "Test ticket"
-        assert data["status"] == "open"
+        assert data["status"] in ["auto_resolved", "escalated"]  # AI processed
         assert "created_at" in data
 
     def test_get_ticket_not_found(self):
@@ -325,7 +325,7 @@ class TestTicketAPIIntegration:
         
         # Verify created ticket structure
         assert created_ticket["message"] == create_data["message"]
-        assert created_ticket["status"] == "open"
+        assert created_ticket["status"] in ["auto_resolved", "escalated"]  # AI processed
         
         # 2. List all tickets and verify our ticket is there
         list_response = client.get("/tickets/")
@@ -352,7 +352,7 @@ class TestTicketAPIIntegration:
         # Verify it matches the original
         assert retrieved_ticket["id"] == ticket_id
         assert retrieved_ticket["message"] == create_data["message"]
-        assert retrieved_ticket["status"] == "open"
+        assert retrieved_ticket["status"] in ["auto_resolved", "escalated"]  # AI processed
 
     def test_multiple_tickets_workflow(self):
         """Test workflow with multiple tickets."""
@@ -389,7 +389,7 @@ class TestTicketAPIIntegration:
             assert retrieved_ticket["message"] == ticket["message"]
 
     def test_status_filtering_workflow(self):
-        """Test status filtering workflow."""
+        """Test status filtering workflow with AI processing."""
         # Create several tickets
         for i in range(3):
             client.post("/tickets/", json={"message": f"Ticket {i+1}"})
@@ -399,17 +399,25 @@ class TestTicketAPIIntegration:
         assert all_response.status_code == 200
         all_tickets = all_response.json()["tickets"]
         
-        # Get only open tickets
-        open_response = client.get("/tickets/?status=open")
-        assert open_response.status_code == 200
-        open_tickets = open_response.json()["tickets"]
+        # Get only escalated tickets (since AI processes all tickets)
+        escalated_response = client.get("/tickets/?status=escalated")
+        assert escalated_response.status_code == 200
+        escalated_tickets = escalated_response.json()["tickets"]
         
-        # All tickets should be open (since we haven't implemented AI processing yet)
-        assert len(open_tickets) == len(all_tickets)
+        # Get only auto_resolved tickets
+        auto_resolved_response = client.get("/tickets/?status=auto_resolved")
+        assert auto_resolved_response.status_code == 200
+        auto_resolved_tickets = auto_resolved_response.json()["tickets"]
         
-        # Verify all are actually open
-        for ticket in open_tickets:
-            assert ticket["status"] == "open"
+        # Verify all tickets are either escalated or auto_resolved
+        total_processed = len(escalated_tickets) + len(auto_resolved_tickets)
+        assert total_processed == len(all_tickets)
+        
+        # Verify ticket statuses are valid
+        for ticket in escalated_tickets:
+            assert ticket["status"] == "escalated"
+        for ticket in auto_resolved_tickets:
+            assert ticket["status"] == "auto_resolved"
 
 
 class TestTicketsHealth:
