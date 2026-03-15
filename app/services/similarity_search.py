@@ -3,6 +3,8 @@ import math
 from typing import Dict, List, Optional
 from collections import Counter
 
+from app.core.config import settings
+
 
 def _tokenize(text: str) -> List[str]:
     """
@@ -138,7 +140,7 @@ def _cosine_similarity(tfidf1: Dict[str, float], tfidf2: Dict[str, float]) -> fl
     return dot_product / (magnitude1 * magnitude2)
 
 
-def find_similar_ticket(new_message: str, resolved_tickets: List[Dict], similarity_threshold: float = 0.7) -> Optional[Dict]:
+def find_similar_ticket(new_message: str, resolved_tickets: List[Dict], similarity_threshold: float = None) -> Optional[Dict]:
     """
     Find the most similar resolved ticket to a new ticket message.
     
@@ -160,11 +162,22 @@ def find_similar_ticket(new_message: str, resolved_tickets: List[Dict], similari
     if not resolved_tickets or not isinstance(resolved_tickets, list):
         return None
     
+    # Validate similarity_threshold parameter
+    if similarity_threshold is None:
+        similarity_threshold = settings.SIMILARITY_THRESHOLD
+    if not isinstance(similarity_threshold, (int, float)):
+        raise ValueError("similarity_threshold must be a numeric value")
+    if not (0.0 <= similarity_threshold <= 1.0):
+        raise ValueError("similarity_threshold must be between 0.0 and 1.0")
+    
     # Extract messages from resolved tickets
     ticket_messages = []
     for ticket in resolved_tickets:
         if isinstance(ticket, dict) and 'message' in ticket:
-            ticket_messages.append(ticket['message'])
+            message = ticket['message']
+            # Only accept string messages and skip blank/whitespace-only ones
+            if isinstance(message, str) and message.strip() != '':
+                ticket_messages.append(message.strip())
     
     if not ticket_messages:
         return None
@@ -186,6 +199,10 @@ def find_similar_ticket(new_message: str, resolved_tickets: List[Dict], similari
             continue
             
         ticket_message = ticket['message']
+        
+        # Skip non-string or blank messages (consistent with earlier validation)
+        if not isinstance(ticket_message, str) or ticket_message.strip() == '':
+            continue
         
         # Calculate TF-IDF for this ticket
         ticket_tf = _calculate_tf(ticket_message)
