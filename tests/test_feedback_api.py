@@ -55,20 +55,31 @@ def db_session(temp_db):
 
 
 @pytest.fixture(scope="function")
-def client(db_session):
+def client(temp_db):
     """Create test client with database override."""
+    # Set up a separate engine and sessionmaker for this client, using the temp DB
+    test_db_url = f"sqlite:///{temp_db}"
+    engine = create_engine(test_db_url, connect_args={"check_same_thread": False})
+    TestingSessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
+
+    # Ensure tables exist for the duration of this fixture
+    Base.metadata.create_all(bind=engine)
+
     def override_get_db():
+        db = TestingSessionLocal()
         try:
-            yield db_session
+            yield db
         finally:
-            pass
-    
+            db.close()
+
     app.dependency_overrides[get_db] = override_get_db
     try:
         yield TestClient(app)
     finally:
-        # Clean up override after test
+        # Clean up override and database after test
         app.dependency_overrides.pop(get_db, None)
+        Base.metadata.drop_all(bind=engine)
+        engine.dispose()
 
 
 class TestFeedbackAPI:
