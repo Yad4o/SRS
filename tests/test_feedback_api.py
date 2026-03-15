@@ -51,8 +51,8 @@ def db_session(temp_db):
         yield db
     finally:
         db.close()
-        engine.dispose()  # Dispose engine to release file locks
-        Base.metadata.drop_all(bind=engine)
+        Base.metadata.drop_all(bind=engine)  # Drop tables before disposing engine
+        engine.dispose()
 
 
 @pytest.fixture(scope="function")
@@ -281,11 +281,9 @@ class TestFeedbackAPI:
         """Test feedback retrieval using query parameter for non-existent ticket."""
         response = client.get("/feedback/?ticket_id=99999")
         
-        assert response.status_code == 200
-        feedback_response = response.json()
-        
-        # Should return None when no feedback found
-        assert feedback_response is None
+        assert response.status_code == 404
+        error_detail = response.json()
+        assert "no feedback found" in error_detail["detail"].lower()
 
     def test_feedback_schema_validation(self, client, db_session):
         """Test feedback schema validation."""
@@ -352,5 +350,3 @@ class TestFeedbackAPI:
         assert retrieved_feedback["rating"] == 4
         assert retrieved_feedback["resolved"] is True
         assert "created_at" in retrieved_feedback
-        """Test complete feedback workflow."""
-        # 1. Create a ticket

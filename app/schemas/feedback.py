@@ -79,11 +79,7 @@ FeedbackRead = FeedbackResponse
 
 class FeedbackList(BaseModel):
     """
-    Schema returned when fetching multiple feedback entries.
-
-    Used in:
-    --------
-    GET /feedback (with filters)
+    Schema for a collection of feedback entries.
 
     Fields:
     -------
