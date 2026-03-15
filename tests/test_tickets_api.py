@@ -50,11 +50,11 @@ class TestCreateTicket:
         data = response.json()
         
         assert data["message"] == ticket_data["message"]
-        assert data["status"] == "open"
+        assert data["status"] in ["auto_resolved", "escalated"]  # AI pipeline processes tickets
         assert "id" in data
         assert "created_at" in data
-        assert data["intent"] is None
-        assert data["confidence"] is None
+        assert data["intent"] is not None  # AI classification
+        assert data["confidence"] is not None  # AI confidence scoring
 
     def test_create_ticket_empty_message(self):
         """Test ticket creation with empty message."""

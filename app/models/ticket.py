@@ -80,6 +80,12 @@ class Ticket(Base):
         doc="Ticket status: open | auto_resolved | escalated | closed",
     )
 
+    response = Column(
+        String,
+        nullable=True,
+        doc="AI-generated response for auto-resolved tickets",
+    )
+
     created_at = Column(
         DateTime,
         default=lambda: datetime.now(timezone.utc),
