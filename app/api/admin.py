@@ -38,8 +38,7 @@ from app.api.auth import get_current_user
 from app.core.exceptions import (
     AuthorizationError,
     ValidationError,
-    InternalError,
-    NotFoundError
+    InternalError
 )
 
 # Configure logger

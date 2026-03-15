@@ -29,7 +29,6 @@ from typing import Dict, Any, Optional
 from fastapi import Request, HTTPException
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
-from pydantic import ValidationError
 
 from app.core.exceptions import (
     BaseAPIException,
@@ -99,7 +98,7 @@ async def http_exception_handler(request: Request, exc: HTTPException) -> JSONRe
     
     # Map HTTP status codes to our error types
     error_mapping = {
-        400: ValidationError,
+        400: AppValidationError,
         401: AuthenticationError,
         403: AuthorizationError,
         404: NotFoundError,
@@ -138,7 +137,7 @@ async def general_exception_handler(request: Request, exc: Exception) -> JSONRes
     """
     # Log the full exception for debugging
     logger.error(
-        f"Unhandled exception in {request.method} {request.url}: {type(exc).__name__}: {str(exc)}\n"
+        f"Unhandled exception in {request.method} {request.url}: {type(exc).__name__}: {exc!s}\n"
         f"Traceback: {traceback.format_exc()}"
     )
     
@@ -172,9 +171,16 @@ async def api_exception_handler(request: Request, exc: BaseAPIException) -> JSON
     # Special handling for AI service errors (return 200 with fallback)
     if isinstance(exc, AIServiceError):
         logger.info(f"AI service fallback activated: {exc.message}")
+        
+        # Set Retry-After header if specified
+        headers = {}
+        if exc.details and "retry_after" in exc.details:
+            headers["Retry-After"] = str(exc.details["retry_after"])
+        
         return JSONResponse(
             status_code=200,
-            content=create_error_response(exc, include_details=True)
+            content=create_error_response(exc, include_details=True),
+            headers=headers
         )
     
     return JSONResponse(

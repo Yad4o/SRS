@@ -123,28 +123,11 @@ class TicketClassificationService(BaseAIService):
             message: Ticket message to classify
             
         Returns:
-            Classification result or fallback
+            Classification result or fallback (backwards compatible)
         """
         def ai_classify(message: str) -> Dict[str, Any]:
             # Simulate AI classification (in real implementation, this would call an AI model)
-            if "login" in message.lower() or "password" in message.lower():
-                return {
-                    "intent": "login_issue",
-                    "confidence": 0.95,
-                    "escalate": False
-                }
-            elif "payment" in message.lower() or "billing" in message.lower():
-                return {
-                    "intent": "payment_issue", 
-                    "confidence": 0.88,
-                    "escalate": True
-                }
-            else:
-                return {
-                    "intent": "general",
-                    "confidence": 0.75,
-                    "escalate": False
-                }
+            return classifier.classify_intent(message)
         
         return self.safe_execute(
             operation="ticket_classification",
@@ -272,21 +255,31 @@ def demonstrate_ai_service_fallback():
     result = classifier.classify_ticket("I can't login to my account")
     print(f"Classification: {result}")
     
+    # Extract actual classification from wrapped response
+    if isinstance(result, dict) and "data" in result:
+        actual_result = result["data"]
+        print(f"Actual classification: {actual_result}")
+    
     # Test with simulated AI failure
     print("\n=== AI Service Failure with Fallback ===")
     
-    # Monkey patch to simulate failure
-    original_safe_execute = classifier.safe_execute
-    def failing_safe_execute(*args, **kwargs):
+    # Monkey patch to simulate failure at the classify_intent level
+    original_classify_intent = classifier.classify_intent
+    def failing_classify_intent(*args, **kwargs):
         raise Exception("AI model temporarily unavailable")
     
-    classifier.safe_execute = failing_safe_execute
+    classifier.classify_intent = failing_classify_intent
     
     result = classifier.classify_ticket("I can't login to my account")
     print(f"Classification with fallback: {result}")
     
+    # Extract actual classification from wrapped response
+    if isinstance(result, dict) and "data" in result:
+        actual_result = result["data"]
+        print(f"Actual classification with fallback: {actual_result}")
+    
     # Restore original method
-    classifier.safe_execute = original_safe_execute
+    classifier.classify_intent = original_classify_intent
 
 
 if __name__ == "__main__":

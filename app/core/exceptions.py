@@ -101,10 +101,15 @@ class InternalError(BaseAPIException):
 class AIServiceError(BaseAPIException):
     """Raised when AI service operations fail."""
     
-    def __init__(self, message: str = "AI service temporarily unavailable", details: Optional[Dict[str, Any]] = None):
+    def __init__(self, message: str = "AI service temporarily unavailable", details: Optional[Dict[str, Any]] = None, retry_after: Optional[int] = None):
+        if details is None:
+            details = {}
+        if retry_after is not None:
+            details["retry_after"] = retry_after
+            
         super().__init__(
             message=message,
-            status_code=200,  # Return 200 with fallback response
+            status_code=503,  # Service Unavailable
             error_code="AI_SERVICE_ERROR",
             details=details
         )
