@@ -2,6 +2,30 @@ import re
 from typing import Dict
 
 
+def _boundary_match(keyword: str, text: str) -> bool:
+    """
+    Check if keyword appears as a whole word/phrase in text (boundary-aware matching).
+    
+    Args:
+        keyword: The keyword to match (can be multi-word)
+        text: The text to search in
+        
+    Returns:
+        bool: True if keyword matches as a whole word/phrase
+    """
+    # Escape special regex characters in keyword
+    escaped_keyword = re.escape(keyword)
+    # Use word boundaries to match whole words only
+    # For multi-word phrases, we need to handle boundaries differently
+    if ' ' in keyword:
+        # Multi-word phrase - check with word boundaries around the whole phrase
+        pattern = r'\b' + escaped_keyword + r'\b'
+    else:
+        # Single word - use standard word boundaries
+        pattern = r'\b' + escaped_keyword + r'\b'
+    return bool(re.search(pattern, text, re.IGNORECASE))
+
+
 def classify_intent(message: str) -> Dict[str, float]:
     """
     Classify user intent using rule-based keyword matching.
@@ -140,7 +164,7 @@ def classify_intent(message: str) -> Dict[str, float]:
         pattern_matches = 0
         
         for keyword in keywords:
-            if keyword in text:
+            if _boundary_match(keyword, text):
                 match_count += 1
         
         # Check pattern matches (higher weight)
@@ -163,19 +187,19 @@ def classify_intent(message: str) -> Dict[str, float]:
                 calculated_confidence *= 0.9
             
             # Special handling for general queries with "explain" + billing context
-            if intent == "general_query" and "explain" in text and "billing" in text:
+            if intent == "general_query" and _boundary_match("explain", text) and _boundary_match("billing", text):
                 calculated_confidence = max(calculated_confidence, 0.95)
             
             # Special handling: reduce payment_issue confidence for "explain" queries without action verbs
-            if intent == "payment_issue" and "explain" in text and "billing" in text:
+            if intent == "payment_issue" and _boundary_match("explain", text) and _boundary_match("billing", text):
                 # Check if this is an informational query (no action verbs like charge, failed, etc.)
                 action_verbs = ["charge", "charged", "failed", "declined", "debit", "refund", "transaction"]
-                has_action_verb = any(verb in text for verb in action_verbs)
+                has_action_verb = any(_boundary_match(verb, text) for verb in action_verbs)
                 if not has_action_verb:
                     calculated_confidence *= 0.7  # Reduce confidence for informational queries
             
             # Special handling: if account_issue has account keywords, give it priority
-            if intent == "account_issue" and any(kw in text for kw in ["account", "delete", "profile"]):
+            if intent == "account_issue" and any(_boundary_match(kw, text) for kw in ["account", "delete", "profile"]):
                 calculated_confidence = max(calculated_confidence, 0.9)
             
             if calculated_confidence > highest_score:
