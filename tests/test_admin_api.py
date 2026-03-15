@@ -54,8 +54,8 @@ def db_session(temp_db):
         yield db
     finally:
         db.close()
-        engine.dispose()  # Dispose engine to release file locks
         Base.metadata.drop_all(bind=engine)
+        engine.dispose()  # Dispose engine to release file locks
 
 
 @pytest.fixture(scope="function")
@@ -113,9 +113,6 @@ def admin_client(admin_token, db_session):
         finally:
             pass
     
-    def override_get_current_user():
-        return admin_user  # This would normally be decoded from token
-    
     app.dependency_overrides[get_db] = override_get_db
     # We'll manually set the Authorization header in tests
     try:
@@ -132,9 +129,6 @@ def user_client(user_token, db_session):
             yield db_session
         finally:
             pass
-    
-    def override_get_current_user():
-        return regular_user  # This would normally be decoded from token
     
     app.dependency_overrides[get_db] = override_get_db
     # We'll manually set the Authorization header in tests
@@ -318,6 +312,16 @@ class TestAdminAPI:
         error_detail = response.json()
         assert "Access denied" in error_detail["detail"]
         assert "Admin role required" in error_detail["detail"]
+
+    def test_admin_tickets_list_invalid_status(self, admin_client, admin_token):
+        """Test admin tickets list with invalid status filter."""
+        headers = {"Authorization": f"Bearer {admin_token}"}
+        response = admin_client.get("/admin/tickets?status=invalid_status", headers=headers)
+        
+        assert response.status_code == 400
+        error_detail = response.json()
+        assert "Invalid status" in error_detail["detail"]
+        assert "invalid_status" in error_detail["detail"]
 
     def test_admin_tickets_list_no_token(self, admin_client):
         """Test admin tickets list endpoint without authentication."""

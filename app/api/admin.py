@@ -39,6 +39,9 @@ from app.api.auth import get_current_user
 # Configure logger
 logger = logging.getLogger(__name__)
 
+# Allowed ticket statuses for validation
+ALLOWED_TICKET_STATUSES = {"open", "auto_resolved", "escalated", "closed"}
+
 router = APIRouter(prefix="/admin", tags=["Admin"])
 
 
@@ -155,14 +158,14 @@ def get_metrics(
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Internal server error occurred while retrieving metrics"
-        )
+        ) from e
 
 
 @router.get("/tickets", response_model=Dict[str, Any])
 def list_all_tickets(
     current_user: User = Depends(require_admin),
     db: Session = Depends(get_db),
-    status_filter: Optional[str] = Query(None, description="Filter by ticket status"),
+    status_filter: Optional[str] = Query(None, alias="status", description="Filter by ticket status"),
     page: int = Query(1, ge=1, description="Page number"),
     limit: int = Query(50, ge=1, le=100, description="Items per page")
 ):
@@ -175,7 +178,7 @@ def list_all_tickets(
     Args:
         current_user: Admin user (from require_admin dependency)
         db: Database session dependency
-        status_filter: Optional filter for ticket status
+        status_filter: Optional filter for ticket status (from query parameter "status_filter")
         page: Page number for pagination
         limit: Number of items per page
         
@@ -186,8 +189,15 @@ def list_all_tickets(
         - filters: Applied filters
         
     Raises:
-        HTTPException: 403 if not admin, 500 for database errors
+        HTTPException: 403 if not admin, 400 for invalid status, 500 for database errors
     """
+    # Validate status filter if provided
+    if status_filter is not None and status_filter not in ALLOWED_TICKET_STATUSES:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Invalid status '{status_filter}'. Allowed statuses: {', '.join(sorted(ALLOWED_TICKET_STATUSES))}"
+        )
+    
     try:
         # Build base query
         query = db.query(Ticket)
@@ -245,4 +255,4 @@ def list_all_tickets(
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Internal server error occurred while retrieving tickets"
-        )
+        ) from e
