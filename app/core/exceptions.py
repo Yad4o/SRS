@@ -104,17 +104,23 @@ class InternalError(BaseAPIException):
 
 
 class AIServiceError(BaseAPIException):
-    """Raised when AI service operations fail."""
-    
+    """Raised when AI service operations fail.
+
+    The handler returns HTTP 200 with fallback content for AI failures so that
+    callers (clients) do not surface hard errors to end-users — the service
+    degrades gracefully.  The status_code here therefore matches that wire
+    behaviour (200), not the conventional 503.
+    """
+
     def __init__(self, message: str = "AI service temporarily unavailable", details: Optional[Dict[str, Any]] = None, retry_after: Optional[int] = None):
         if details is None:
             details = {}
         if retry_after is not None:
             details["retry_after"] = retry_after
-            
+
         super().__init__(
             message=message,
-            status_code=503,  # Service Unavailable
+            status_code=200,  # Handler returns 200 with fallback — graceful degradation
             error_code="AI_SERVICE_ERROR",
             details=details
         )
