@@ -150,10 +150,11 @@ class TestExceptionHandlers:
         
         assert response.status_code == 404
         data = response.json()
-        
-        # FastAPI's default 404 may not use our error format
-        # Check that we get some kind of error response
-        assert "detail" in data or "error" in data
+
+        # StarletteHTTPException handler is registered, so 404 must use our format
+        assert "error" in data
+        assert data["error"]["code"] == "NOT_FOUND"
+        assert data["error"]["status_code"] == 404
 
     def test_method_not_allowed_handler(self):
         """Test method not allowed error."""
@@ -163,6 +164,11 @@ class TestExceptionHandlers:
         response = client.delete("/tickets/")
         
         assert response.status_code == 405
+        data = response.json()
+
+        # StarletteHTTPException handler is registered, so 405 must use our format
+        assert "error" in data
+        assert data["error"]["status_code"] == 405
 
     def test_custom_api_exception_handler(self):
         """Test custom API exception handler."""
