@@ -113,16 +113,15 @@ class AIServiceError(BaseAPIException):
     """
 
     def __init__(self, message: str = "AI service temporarily unavailable", details: Optional[Dict[str, Any]] = None, retry_after: Optional[int] = None):
-        if details is None:
-            details = {}
+        new_details = dict(details) if details is not None else {}
         if retry_after is not None:
-            details["retry_after"] = retry_after
+            new_details["retry_after"] = retry_after
 
         super().__init__(
             message=message,
             status_code=200,  # Handler returns 200 with fallback — graceful degradation
             error_code="AI_SERVICE_ERROR",
-            details=details
+            details=new_details
         )
 
 

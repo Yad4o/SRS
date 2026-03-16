@@ -97,7 +97,7 @@ async def http_exception_handler(request: Request, exc: HTTPException) -> JSONRe
         JSONResponse with HTTP error details
     """
     # Log the HTTP exception
-    logger.warning(f"HTTP exception in {request.method} {request.url}: {exc.status_code} - {exc.detail}")
+    logger.warning(f"HTTP exception in {request.method} {request.url.path}: {exc.status_code} - {exc.detail}")
     
     # Map HTTP status codes to our custom exception types
     error_mapping = {
@@ -127,6 +127,12 @@ async def http_exception_handler(request: Request, exc: HTTPException) -> JSONRe
         )
         app_exc = InternalError(message=exc.detail)
 
+    # Ensure proper error code preservation for non-500 responses
+    if error_class is not InternalError:
+        app_exc.code = getattr(error_class, "code", None)
+    elif exc.status_code < 500:
+        app_exc.code = f"HTTP_{exc.status_code}"
+    
     # Ensure the JSON body status_code reflects the real HTTP status, not
     # the default from the exception class (e.g. InternalError defaults to 500
     # but a 405 should report 405 in the body as well).
@@ -151,7 +157,7 @@ async def general_exception_handler(request: Request, exc: Exception) -> JSONRes
     """
     # Log the full exception for debugging
     logger.error(
-        f"Unhandled exception in {request.method} {request.url}: {type(exc).__name__}: {exc!s}\n"
+        f"Unhandled exception in {request.method} {request.url.path}: {type(exc).__name__}: {exc!s}\n"
         f"Traceback: {traceback.format_exc()}"
     )
     
@@ -179,7 +185,7 @@ async def api_exception_handler(request: Request, exc: BaseAPIException) -> JSON
     log_level = logging.WARNING if exc.status_code < 500 else logging.ERROR
     logger.log(
         log_level,
-        f"API exception in {request.method} {request.url}: {exc.error_code} - {exc.message}"
+        f"API exception in {request.method} {request.url.path}: {exc.error_code} - {exc.message}"
     )
     
     # Special handling for AI service errors (return 200 with fallback)
