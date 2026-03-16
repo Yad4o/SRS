@@ -42,9 +42,9 @@ class BaseAPIException(Exception):
         super().__init__(self.message)
 
 
-class ValidationError(BaseAPIException):
+class AppValidationError(BaseAPIException):
     """Raised when request validation fails."""
-    
+
     def __init__(self, message: str, details: Optional[Dict[str, Any]] = None):
         super().__init__(
             message=message,
@@ -52,6 +52,11 @@ class ValidationError(BaseAPIException):
             error_code="VALIDATION_ERROR",
             details=details
         )
+
+
+# Backward-compatible alias — use AppValidationError in new code to avoid
+# shadowing pydantic.ValidationError at import time.
+ValidationError = AppValidationError
 
 
 class AuthenticationError(BaseAPIException):
@@ -137,16 +142,15 @@ class RateLimitError(BaseAPIException):
         )
 
 
-# Error type to HTTP status code mapping
-# Note: AIServiceError maps to 200 in ERROR_RESPONSE_STATUS_MAPPING because the handler
-# returns 200 with fallback content, even though AIServiceError itself defines status_code=503
+# Error type to HTTP status code mapping.
+# AIServiceError maps to 200 because the handler returns 200 with fallback content.
 ERROR_RESPONSE_STATUS_MAPPING = {
-    ValidationError: 400,
+    AppValidationError: 400,
     AuthenticationError: 401,
     AuthorizationError: 403,
     NotFoundError: 404,
     InternalError: 500,
-    AIServiceError: 200,  # Special case: returns 200 with fallback
+    AIServiceError: 200,  # Special case: AI failures return 200 with fallback
     DatabaseError: 500,
     RateLimitError: 429,
 }

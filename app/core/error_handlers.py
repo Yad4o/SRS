@@ -32,7 +32,7 @@ from fastapi.responses import JSONResponse
 
 from app.core.exceptions import (
     BaseAPIException,
-    ValidationError as AppValidationError,
+    AppValidationError,
     AuthenticationError,
     AuthorizationError,
     NotFoundError,
