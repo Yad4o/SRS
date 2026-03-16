@@ -48,6 +48,38 @@ from app.core.exceptions import (
 logger = logging.getLogger(__name__)
 
 
+def _sanitize_error_details(error_details: Optional[Dict[str, Any]]) -> str:
+    """
+    Sanitize error details for safe logging.
+    
+    Args:
+        error_details: Raw error details that may contain sensitive information
+        
+    Returns:
+        Sanitized string safe for logging
+    """
+    if error_details is None:
+        return "Unknown error"
+    
+    # Extract safe information only
+    safe_parts = []
+    
+    if "service" in error_details:
+        safe_parts.append(f"service={error_details['service']}")
+    
+    if "operation" in error_details:
+        safe_parts.append(f"operation={error_details['operation']}")
+    
+    if "error_type" in error_details:
+        safe_parts.append(f"error_type={error_details['error_type']}")
+    
+    # Never include error_message as it may contain sensitive data
+    if safe_parts:
+        return ", ".join(safe_parts) + " (<redacted error>)"
+    else:
+        return "<redacted error>"
+
+
 async def validation_exception_handler(request: Request, exc: RequestValidationError) -> JSONResponse:
     """
     Handle FastAPI request validation errors.
@@ -248,7 +280,7 @@ def handle_ai_service_failure(
     """
     # Log the AI service failure
     logger.warning(
-        f"AI service failure in {operation}: {error_details or 'Unknown error'}"
+        f"AI service failure in {operation}: {_sanitize_error_details(error_details)}"
     )
     
     # Return fallback response with error information
