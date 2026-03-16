@@ -58,8 +58,10 @@ async def validation_exception_handler(request: Request, exc: RequestValidationE
     Returns:
         JSONResponse with validation error details
     """
-    # Log the validation error for debugging
-    logger.warning(f"Validation error in {request.method} {request.url}: {exc.errors()}")
+    # Log the validation error — only field path and type, NOT the input value
+    # to avoid logging user-supplied data (passwords, PII, secrets, etc.)
+    safe_errors = [{"loc": e["loc"], "type": e["type"]} for e in exc.errors()]
+    logger.warning(f"Validation error in {request.method} {request.url.path}: {safe_errors}")
     
     # Convert Pydantic validation errors to our format
     validation_details = []
