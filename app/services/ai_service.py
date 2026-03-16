@@ -263,27 +263,30 @@ def demonstrate_ai_service_fallback():
     
     # Test with simulated AI failure
     print("\n=== AI Service Failure with Fallback ===")
-    
-    # Monkey patch to simulate failure at the classify_intent level
-    from app.services.classifier import classify_intent as original_classify_intent
+
+    # We must patch the name in THIS module (app.services.ai_service) because
+    # `classify_intent` was imported here with `from ... import classify_intent`,
+    # creating a local binding. Patching the source module (app.services.classifier)
+    # has no effect on the already-bound local name.
+    import app.services.ai_service as _ai_service_module
+    original_classify_intent = _ai_service_module.classify_intent
+
     def failing_classify_intent(*args, **kwargs):
         raise Exception("AI model temporarily unavailable")
-    
-    # Temporarily replace the function
-    import app.services.classifier
-    app.services.classifier.classify_intent = failing_classify_intent
-    
+
+    _ai_service_module.classify_intent = failing_classify_intent
+
     try:
         result = classifier.classify_ticket("I can't login to my account")
         print(f"Classification with fallback: {result}")
-        
+
         # Extract actual classification from wrapped response
         if isinstance(result, dict) and "data" in result:
             actual_result = result["data"]
             print(f"Actual classification: {actual_result}")
     finally:
         # Restore original function
-        app.services.classifier.classify_intent = original_classify_intent
+        _ai_service_module.classify_intent = original_classify_intent
 
 
 if __name__ == "__main__":
