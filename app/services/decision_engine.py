@@ -29,6 +29,10 @@ def decide_resolution(confidence: float) -> Literal["AUTO_RESOLVE", "ESCALATE"]:
     if isinstance(confidence, bool):  # bool is subclass of int, but we don't want it
         return "ESCALATE"
     
+    # Check for NaN
+    if confidence != confidence:  # NaN check
+        return "ESCALATE"
+    
     if not (0.0 <= confidence <= 1.0):
         return "ESCALATE"
     
