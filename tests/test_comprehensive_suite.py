@@ -28,10 +28,44 @@ from tests.test_ai_mocks import (
     create_mock_ai_service
 )
 
-# Test database setup
-SQLALCHEMY_DATABASE_URL = "sqlite:///./test_comprehensive.db"
-engine = create_engine(SQLALCHEMY_DATABASE_URL, connect_args={"check_same_thread": False})
-TestingSessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
+# Test database setup - use temporary database for parallel safety
+import tempfile
+import os
+
+@pytest.fixture(scope="session")
+def temp_db_file():
+    """Create a temporary database file for the test session."""
+    temp_db = tempfile.NamedTemporaryFile(delete=False, suffix='.db')
+    temp_db.close()
+    yield temp_db.name
+    # Clean up after session
+    import gc
+    gc.collect()
+    try:
+        import time
+        time.sleep(0.1)
+        os.unlink(temp_db.name)
+    except (OSError, PermissionError):
+        pass  # Ignore cleanup errors
+
+@pytest.fixture(scope="function")
+def comprehensive_engine(temp_db_file):
+    """Create database engine for this test session."""
+    SQLALCHEMY_DATABASE_URL = f"sqlite:///{temp_db_file}"
+    engine = create_engine(SQLALCHEMY_DATABASE_URL, connect_args={"check_same_thread": False})
+    yield engine
+
+@pytest.fixture(scope="function")
+def db_session(comprehensive_engine):
+    """Create test database session."""
+    TestingSessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=comprehensive_engine)
+    Base.metadata.create_all(bind=comprehensive_engine)
+    db = TestingSessionLocal()
+    try:
+        yield db
+    finally:
+        db.close()
+        Base.metadata.drop_all(bind=comprehensive_engine)
 
 
 def override_get_db():
@@ -44,25 +78,23 @@ def override_get_db():
 
 
 @pytest.fixture(scope="function")
-def client():
+def client(comprehensive_engine):
     """Create test client with database override."""
+    TestingSessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=comprehensive_engine)
+    
+    def override_get_db():
+        """Override database dependency for testing."""
+        try:
+            db = TestingSessionLocal()
+            yield db
+        finally:
+            db.close()
+    
     app.dependency_overrides[get_db] = override_get_db
     try:
         yield TestClient(app)
     finally:
         app.dependency_overrides.clear()
-
-
-@pytest.fixture(scope="function")
-def db_session():
-    """Create test database session."""
-    Base.metadata.create_all(bind=engine)
-    db = TestingSessionLocal()
-    try:
-        yield db
-    finally:
-        db.close()
-        Base.metadata.drop_all(bind=engine)
 
 
 class TestRealAIImplementation:
