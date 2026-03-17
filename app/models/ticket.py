@@ -27,6 +27,7 @@ from sqlalchemy import Column, Integer, String, Float, DateTime
 from sqlalchemy.orm import relationship
 
 from app.db.session import Base
+from app.models.feedback import Feedback
 
 
 class Ticket(Base):
