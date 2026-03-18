@@ -18,3 +18,9 @@ Thumbs.db
 
 # Database files
 *.db
+
+# Worker output files
+embeddings.json
+feedback_analysis.json
+metrics.json
+metrics_*.json

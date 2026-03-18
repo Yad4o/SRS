@@ -23,7 +23,7 @@ DO NOT:
 """
 
 from datetime import datetime, timezone
-from sqlalchemy import Column, Integer, String, Float, DateTime
+from sqlalchemy import Boolean, Column, Integer, String, Float, DateTime
 from sqlalchemy.orm import relationship
 
 from app.db.session import Base
@@ -80,6 +80,13 @@ class Ticket(Base):
         default="open",
         nullable=False,
         doc="Ticket status: open | auto_resolved | escalated | closed",
+    )
+
+    is_archived = Column(
+        Boolean,
+        default=False,
+        nullable=False,
+        doc="Whether the ticket has been archived by the cleanup worker",
     )
 
     response = Column(
