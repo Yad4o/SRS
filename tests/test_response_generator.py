@@ -14,18 +14,17 @@ def test_generate_response_with_similar_solution():
     assert "Reset your password using the forgot password link" in result
     assert "helped" in result.lower()
 
-
 def test_generate_response_without_similar_solution():
     """Test priority 2: intent-based templates."""
     intent = "payment_issue"
     original_message = "I was charged twice"
     similar_solution = None
-    
+
     result = generate_response(intent, original_message, similar_solution)
-    
-    assert "payment problems" in result.lower()
-    assert "billing statement" not in result.lower()  # Using third template now
-    assert "payment support" not in result.lower()  # Using third template now
+
+    # "I was charged twice" matches duplicate/unexpected keywords → template 0
+    assert "transaction" in result.lower()
+    assert "3-5 business day" in result.lower() or "3–5 business" in result.lower()
 
 
 def test_generate_response_question():
@@ -33,10 +32,11 @@ def test_generate_response_question():
     intent = "general_query"
     original_message = "How do I reset my password?"
     similar_solution = None
-    
+
     result = generate_response(intent, original_message, similar_solution)
-    
-    assert "question" in result.lower() or "help you with that" in result.lower()
+
+    # "how" keyword → template 0 (how-to)
+    assert "help center" in result.lower()
 
 
 def test_generate_response_urgent():
@@ -44,11 +44,11 @@ def test_generate_response_urgent():
     intent = "technical_issue"
     original_message = "URGENT: The system is down"
     similar_solution = None
-    
+
     result = generate_response(intent, original_message, similar_solution)
-    
-    assert "technical issues" in result.lower()
-    assert "restarting your device" in result.lower()
+
+    # No keyword match for urgent → default template 2 (broken feature/default)
+    assert "status page" in result.lower()
 
 
 def test_generate_response_empty_similar_solution():
@@ -56,12 +56,12 @@ def test_generate_response_empty_similar_solution():
     intent = "account_issue"
     original_message = "Update my email"
     similar_solution = ""  # Empty string
-    
+
     result = generate_response(intent, original_message, similar_solution)
-    
-    # Should fall back to intent-based template
-    assert "account-related problems" in result.lower()
-    assert "contact information" in result.lower()
+
+    # "update" and "email" keywords → template 1 (update info)
+    assert "settings" in result.lower()
+    assert "verification" in result.lower()
 
 
 def test_generate_response_whitespace_similar_solution():
@@ -69,12 +69,12 @@ def test_generate_response_whitespace_similar_solution():
     intent = "feature_request"
     original_message = "Add dark mode"
     similar_solution = "   "  # Whitespace only
-    
+
     result = generate_response(intent, original_message, similar_solution)
-    
-    # Should fall back to intent-based template
-    assert "we value your input" in result.lower()
-    assert "feature request" in result.lower()
+
+    # "add" keyword → template 0 (new feature)
+    assert "roadmap" in result.lower()
+    assert "upvot" in result.lower()
 
 
 def test_generate_response_unknown_intent():
@@ -137,3 +137,29 @@ def test_generate_response_is_deterministic():
     
     assert result1 == result2  # Deterministic
     assert isinstance(result1, str)  # Only returns text
+
+from app.services.response_generator import generate_response
+
+
+def test_login_forgot_password_returns_reset_flow_template():
+    """'I forgot my password' should route to the reset flow template."""
+    response = generate_response("login_issue", "I forgot my password")
+    assert "Forgot Password" in response, (
+        f"Expected reset flow template (containing 'Forgot Password'), got:\n{response}"
+    )
+
+
+def test_login_account_locked_returns_locked_template():
+    """'my account is locked' should route to the locked/2FA template."""
+    response = generate_response("login_issue", "my account is locked")
+    assert "locked" in response.lower(), (
+        f"Expected locked account template (containing 'locked'), got:\n{response}"
+    )
+
+
+def test_payment_charged_twice_returns_duplicate_charge_template():
+    """'I was charged twice' should route to the duplicate charge template."""
+    response = generate_response("payment_issue", "I was charged twice")
+    assert "transaction" in response.lower(), (
+        f"Expected duplicate charge template (containing 'transaction'), got:\n{response}"
+    )
