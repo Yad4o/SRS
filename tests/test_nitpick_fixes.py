@@ -46,12 +46,15 @@ def test_response_generator_fixes():
     
     # Test 4: All fixes work together
     print("Test 4 - All fixes integration:")
-    result_with_solution = generate_response('technical_issue', 'app broken', 'I understand you\'re experiencing an issue. Based on a similar case, here\'s what helped: I understand you\'m experiencing an issue. Based on a similar case, here\'s what helped: Clear cache and restart')
+    nested_wrapper = "I understand you're experiencing an issue. Based on a similar case, here's what helped: I understand you're experiencing an issue. Based on a similar case, here's what helped: Clear cache and restart"
+    result_with_solution = generate_response('technical_issue', 'app broken', nested_wrapper)
     print(f'Integrated result with solution: {result_with_solution}')
     
-    # Should use cleaned similar solution and NOT configurable status URL (since similar solution takes priority)
-    assert "clear cache and restart" in result_with_solution.lower(), "Should use cleaned similar solution"
-    assert "Clear cache and restart" in result_with_solution, "Should use cleaned similar solution"
+    # Should use cleaned similar solution with exact casing and no duplicate wrapper content
+    assert "Clear cache and restart" in result_with_solution, "Should contain cleaned solution with correct casing"
+    assert result_with_solution.count("Clear cache and restart") == 1, "Solution should appear exactly once (no duplicates)"
+    assert result_with_solution.count("I understand") == 1, "Wrapper prefix should appear exactly once (no duplicates)"
+    assert settings.STATUS_PAGE_URL not in result_with_solution, "Should not contain configurable status URL when similar solution provided"
     
     result_without_solution = generate_response('general_query', 'random question', None)
     print(f'Integrated result without solution: {result_without_solution}')

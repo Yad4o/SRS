@@ -185,17 +185,16 @@ def generate_response(intent: str, original_message: str, similar_solution: Opti
         intent: The classified intent (e.g., 'login_issue', 'payment_issue')
         original_message: The original user message for context
         similar_solution: Optional solution from a similar resolved ticket to reuse.
-                          NOTE: This parameter is trusted/raw user-provided content.
-                          Callers are responsible for sanitization/validation before
-                          calling this function. The function will pass through the
-                          similar_solution verbatim without sanitization.
+                          NOTE: This parameter is processed by _clean_similar_solution
+                          which performs prefix stripping, normalization, and length bounding.
+                          Callers should still sanitize/validate if stronger guarantees are needed.
 
     Returns:
         str: Generated response text
     """
 
     # Priority 1: Reuse similar solution if provided
-    # NOTE: similar_solution is passed through verbatim - callers must sanitize
+    # NOTE: similar_solution is processed by _clean_similar_solution for safety
     if similar_solution and similar_solution.strip():
         cleaned_solution = _clean_similar_solution(similar_solution)
         return f"I understand you're experiencing an issue. Based on a similar case, here's what helped: {cleaned_solution}"
