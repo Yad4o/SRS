@@ -1,4 +1,64 @@
 from typing import Optional
+import re
+from app.core.config import settings
+
+
+def _normalize_message(message: str) -> str:
+    """
+    Apply stronger normalization to improve keyword matching accuracy.
+    
+    Args:
+        message: Raw user message
+        
+    Returns:
+        str: Normalized message for accurate matching
+    """
+    # Convert to lowercase
+    normalized = message.lower()
+    
+    # Strip and normalize punctuation (replace with spaces)
+    normalized = re.sub(r'[^\w\s]', ' ', normalized)
+    
+    # Normalize hyphens to spaces
+    normalized = normalized.replace('-', ' ')
+    
+    # Collapse multiple spaces to single space
+    normalized = re.sub(r'\s+', ' ', normalized)
+    
+    # Strip leading/trailing whitespace
+    normalized = normalized.strip()
+    
+    return normalized
+
+
+def _match_keywords(normalized_msg: str, keywords: list[str]) -> bool:
+    """
+    Match keywords using word boundaries for more accurate matching.
+    
+    Args:
+        normalized_msg: Normalized message
+        keywords: List of keywords to match
+        
+    Returns:
+        bool: True if any keyword matches as a whole word/phrase
+    """
+    for keyword in keywords:
+        # Normalize keyword the same way
+        norm_keyword = keyword.lower().replace('-', ' ')
+        norm_keyword = re.sub(r'[^\w\s]', ' ', norm_keyword)
+        norm_keyword = re.sub(r'\s+', ' ', norm_keyword).strip()
+        
+        # Use word boundary matching for single words
+        if ' ' not in norm_keyword:
+            pattern = r'\b' + re.escape(norm_keyword) + r'\b'
+            if re.search(pattern, normalized_msg):
+                return True
+        # For phrases, use substring matching on normalized text
+        else:
+            if norm_keyword in normalized_msg:
+                return True
+    
+    return False
 
 
 def _select_template(intent: str, message: str) -> str:
@@ -7,7 +67,7 @@ def _select_template(intent: str, message: str) -> str:
 
     Args:
         intent: The classified intent string.
-        message: The raw user message (will be lowercased internally).
+        message: The raw user message (will be normalized internally).
 
     Returns:
         str: The selected response template text.
@@ -15,11 +75,13 @@ def _select_template(intent: str, message: str) -> str:
     if intent not in response_templates:
         return "I've received your message and will do my best to assist you."
 
-    msg = message.lower()
+    # Apply stronger normalization
+    normalized_msg = _normalize_message(message)
 
+    # Reordered keyword rules: specific billing/security keywords first
     keyword_rules = {
         "login_issue": [
-            (["forgot", "reset", "remember", "lost", "recovery"], 0),
+            (["forgot", "reset", "remember", "lost", "recovery", "login"], 0),
             (["locked", "lock", "blocked", "2fa", "two factor", "suspended", "attempts"], 1),
         ],
         "payment_issue": [
@@ -39,18 +101,65 @@ def _select_template(intent: str, message: str) -> str:
             (["improve", "better", "fix", "enhance", "update existing"], 1),
         ],
         "general_query": [
-            (["how", "what", "where", "when", "guide", "steps", "tutorial"], 0),
-            (["price", "pricing", "cost", "plan", "upgrade", "subscribe"], 1),
+            # Specific billing/security keywords first
+            (["price", "pricing", "cost", "plan", "upgrade", "subscribe", "billing", "renew", "subscription", "two-factor", "two factor"], 1),
+            # Generic question words last
+            (["how", "what", "where", "when", "guide", "steps", "tutorial", "why", "new", "cancel"], 0),
         ],
     }
 
     rules = keyword_rules.get(intent, [])
     for keywords, template_index in rules:
-        if any(kw in msg for kw in keywords):
+        if _match_keywords(normalized_msg, keywords):
             return response_templates[intent][template_index]
 
     # Default: last template
     return response_templates[intent][-1]
+
+
+def _clean_similar_solution(solution: str) -> str:
+    """
+    Clean and normalize a similar solution to prevent wrapper nesting and limit length.
+    
+    Args:
+        solution: Raw similar solution text
+        
+    Returns:
+        str: Cleaned, bounded, and normalized solution
+    """
+    # Detect and remove existing wrapper prefixes
+    wrapper_prefixes = [
+        "I understand you're experiencing an issue. Based on a similar case, here's what helped:",
+        "Based on a similar case, here's what helped:",
+        "Here's what helped in a similar case:",
+        "Similar case solution:",
+    ]
+    
+    cleaned = solution.strip()
+    for prefix in wrapper_prefixes:
+        if cleaned.lower().startswith(prefix.lower()):
+            # Remove the prefix and any following whitespace/colon
+            cleaned = cleaned[len(prefix):].lstrip(': ').strip()
+            break
+    
+    # Normalize whitespace
+    cleaned = re.sub(r'\s+', ' ', cleaned)
+    
+    # Limit to safe maximum length (1000 chars)
+    if len(cleaned) > 1000:
+        cleaned = cleaned[:1000].rstrip()
+        # Try to end at a sentence boundary
+        last_period = cleaned.rfind('.')
+        last_exclamation = cleaned.rfind('!')
+        last_question = cleaned.rfind('?')
+        
+        last_sentence_end = max(last_period, last_exclamation, last_question)
+        if last_sentence_end > 800:  # Only truncate if we have substantial content
+            cleaned = cleaned[:last_sentence_end + 1]
+        else:
+            cleaned += '...'  # Indicate truncation
+    
+    return cleaned
 
 
 def generate_response(intent: str, original_message: str, similar_solution: Optional[str] = None) -> str:
@@ -76,21 +185,11 @@ def generate_response(intent: str, original_message: str, similar_solution: Opti
     # Priority 1: Reuse similar solution if provided
     # NOTE: similar_solution is passed through verbatim - callers must sanitize
     if similar_solution and similar_solution.strip():
-        return f"I understand you're experiencing an issue. Based on a similar case, here's what helped: {similar_solution}"
+        cleaned_solution = _clean_similar_solution(similar_solution)
+        return f"I understand you're experiencing an issue. Based on a similar case, here's what helped: {cleaned_solution}"
 
-    # Priority 2: Intent-based static templates
-    if intent in response_templates:
-        return _select_template(intent, original_message)
-
-    # Priority 3: Fallback response
-    fallback_responses = [
-        "I understand your request and will do my best to assist you.",
-        "Thank you for contacting us. I'm here to help resolve your issue.",
-        "I've received your message and will provide appropriate assistance."
-    ]
-
-    fallback_index = len(original_message) % len(fallback_responses)
-    return fallback_responses[fallback_index]
+    # Priority 2: Intent-based static templates - always delegate to selector
+    return _select_template(intent, original_message)
 
 
 # ---------------------------------------------------------------------------
@@ -166,7 +265,7 @@ response_templates = {
         "your end.",
 
         # 2 — broken feature / default
-        "First, check our status page (status.example.com) to see if there's a known outage or "
+        f"First, check our status page ({settings.STATUS_PAGE_URL}) to see if there's a known outage or "
         "ongoing incident. If everything looks fine there, try switching to a different browser — "
         "this rules out a browser-specific compatibility issue. If the problem persists, let us know "
         "and we'll dig deeper.",
@@ -201,7 +300,7 @@ response_templates = {
         "suggest the best fit.",
 
         # 2 — contact / default
-        "You can reach our support team by emailing support@example.com or using the live chat in "
+        f"You can reach our support team by emailing {settings.SUPPORT_EMAIL} or using the live chat in "
         "the bottom-right corner of the app. Live chat is available Monday-Friday, 9 am-6 pm UTC.",
     ],
 }

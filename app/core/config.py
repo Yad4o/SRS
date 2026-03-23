@@ -129,6 +129,12 @@ class Settings(BaseSettings):
     # Rate Limiting
     # -------------------------------------------------
     RATE_LIMIT_PER_MINUTE: int = 60
+    
+    # -------------------------------------------------
+    # Support Configuration
+    # -------------------------------------------------
+    STATUS_PAGE_URL: str = "https://status.example.com"
+    SUPPORT_EMAIL: str = "support@example.com"
 
 @lru_cache
 def get_settings() -> Settings:
