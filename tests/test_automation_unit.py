@@ -363,7 +363,7 @@ class TestResponseGenerator:
     @patch('app.services.response_generator.generate_response')
     def test_generate_response_without_similar_solution(self, mock_generate):
         """Test response generation without similar solution."""
-        mock_generate.return_value = "I understand you're experiencing a login issue. Please try resetting your password"
+        mock_generate.return_value = "Please double-check the email address you're signing in with — it's easy to mix up similar addresses. Also check for any accidental leading or trailing spaces in your password field. If you originally signed up via Google or another social provider, try that sign-in option instead of entering a password directly."
         
         result = generate_response(
             intent="login_issue",

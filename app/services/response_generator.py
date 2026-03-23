@@ -142,7 +142,13 @@ def _clean_similar_solution(solution: str) -> str:
         for prefix in wrapper_prefixes:
             if cleaned.lower().startswith(prefix.lower()):
                 # Remove prefix and any following whitespace/colon
-                cleaned = cleaned[len(prefix):].lstrip(': ').strip()
+                remainder = cleaned[len(prefix):]
+                # Explicitly check for and remove exact delimiter sequence
+                if remainder.startswith(': '):
+                    remainder = remainder[2:]
+                elif remainder.startswith(':'):
+                    remainder = remainder[1:]
+                cleaned = remainder.strip()
                 found_prefix = True
                 break
         if not found_prefix:
