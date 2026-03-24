@@ -1,5 +1,5 @@
 import re
-from typing import Dict
+from typing import Dict, Optional
 
 
 def _boundary_match(keyword: str, text: str) -> bool:
@@ -26,7 +26,7 @@ def _boundary_match(keyword: str, text: str) -> bool:
     return bool(re.search(pattern, text, re.IGNORECASE))
 
 
-def classify_intent(message: str) -> Dict[str, float]:
+def classify_intent(message: str) -> Dict:
     """
     Classify user intent using rule-based keyword matching.
     
@@ -39,14 +39,16 @@ def classify_intent(message: str) -> Dict[str, float]:
     Returns:
         dict: {
             "intent": str,
-            "confidence": float (0.0-1.0)
+            "confidence": float (0.0-1.0),
+            "sub_intent": Optional[str]
         }
     """
 
     if not message or not isinstance(message, str):
         return {
             "intent": "unknown",
-            "confidence": 0.0
+            "confidence": 0.0,
+            "sub_intent": None,
         }
 
     # Normalize message
@@ -62,7 +64,8 @@ def classify_intent(message: str) -> Dict[str, float]:
     if len(text) < 3:
         return {
             "intent": "unknown",
-            "confidence": 0.0
+            "confidence": 0.0,
+            "sub_intent": None,
         }
 
     # -------- Intent Classification Rules -------- #
@@ -73,7 +76,8 @@ def classify_intent(message: str) -> Dict[str, float]:
                 "login", "signin", "sign in", "log in", "authentication", "password",
                 "credentials", "access", "account access", "cant login", "unable to login",
                 "forgot password", "reset password", "locked out", "account locked",
-                "sign in issue", "login problem", "authentication failed"
+                "sign in issue", "login problem", "authentication failed",
+                "locked", "blocked", "suspended", "2fa", "two factor", "attempts"
             ],
             "confidence": 0.85
         },
@@ -109,7 +113,8 @@ def classify_intent(message: str) -> Dict[str, float]:
                 "feature", "request", "suggestion", "improvement", "enhancement",
                 "add", "implement", "new feature", "would like", "wish", "hope",
                 "suggest", "recommend", "feedback", "idea", "could you", "can you",
-                "would be great", "nice to have", "should have"
+                "would be great", "nice to have", "should have",
+                "improve", "better", "enhance", "search"
             ],
             "confidence": 0.8
         },
@@ -201,6 +206,10 @@ def classify_intent(message: str) -> Dict[str, float]:
             # Special handling: if account_issue has account keywords, give it priority
             if intent == "account_issue" and any(_boundary_match(kw, text) for kw in ["account", "delete", "profile"]):
                 calculated_confidence = max(calculated_confidence, 0.9)
+
+            # Special handling: locked/blocked/suspended are login signals even when "account" is present
+            if intent == "login_issue" and any(_boundary_match(kw, text) for kw in ["locked", "blocked", "suspended", "attempts", "2fa", "two factor"]):
+                calculated_confidence = max(calculated_confidence, 0.92)
             
             if calculated_confidence > highest_score:
                 highest_score = calculated_confidence
@@ -213,17 +222,57 @@ def classify_intent(message: str) -> Dict[str, float]:
                     highest_score = calculated_confidence
                     best_match = intent
 
+    # -------- Sub-intent Detection -------- #
+
+    sub_intent_patterns: dict[str, list[tuple[str, list[str]]]] = {
+        "login_issue": [
+            ("password_reset",    ["forgot", "reset", "remember", "lost", "recovery"]),
+            ("account_locked",    ["locked", "lock", "blocked", "2fa", "two factor", "suspended", "attempts"]),
+            ("wrong_credentials", ["credentials", "wrong", "invalid"]),
+        ],
+        "payment_issue": [
+            ("duplicate_charge",  ["twice", "double", "duplicate", "refund", "unexpected"]),
+            ("payment_declined",  ["declined", "failed", "rejected"]),
+            ("billing_question",  ["invoice", "receipt", "plan", "pricing"]),
+        ],
+        "account_issue": [
+            ("delete_account",    ["delete", "remove", "close", "cancel", "deactivate", "gdpr"]),
+            ("update_info",       ["update", "change", "edit", "email", "phone", "name", "profile"]),
+        ],
+        "technical_issue": [
+            ("crash_error",       ["crash", "error", "bug", "broken", "not working", "fails"]),
+            ("performance",       ["slow", "loading", "lag", "freeze", "timeout"]),
+        ],
+        "feature_request": [
+            ("new_feature",       ["add", "new", "build", "implement", "wish"]),
+            ("improvement",       ["improve", "better", "enhance"]),
+        ],
+        "general_query": [
+            ("how_to",            ["how", "steps", "guide", "tutorial"]),
+            ("pricing_plan",      ["price", "cost", "plan", "upgrade"]),
+        ],
+    }
+
+    sub_intent: Optional[str] = None
+    if best_match:
+        for sub_intent_name, keywords in sub_intent_patterns.get(best_match, []):
+            if any(kw in text for kw in keywords):
+                sub_intent = sub_intent_name
+                break
+
     # -------- Return Result -------- #
     
     if best_match:
         return {
             "intent": best_match,
-            "confidence": round(highest_score, 3)
+            "confidence": round(highest_score, 3),
+            "sub_intent": sub_intent,
         }
     
     # -------- Fallback -------- #
     
     return {
         "intent": "unknown",
-        "confidence": 0.2
+        "confidence": 0.2,
+        "sub_intent": None,
     }
