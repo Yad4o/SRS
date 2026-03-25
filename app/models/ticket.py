@@ -68,36 +68,11 @@ class Ticket(Base):
         doc="Predicted intent (e.g., login_issue, payment, refund)",
     )
 
-    """
-SQLAlchemy ORM model for support tickets.
-"""
-
-from sqlalchemy import Column, Integer, String, Text, DateTime, Float
-from sqlalchemy.orm import declarative_base
-from datetime import datetime
-
-Base = declarative_base()
-
-
-class Ticket(Base):
-    __tablename__ = "tickets"
-
-    id         = Column(Integer, primary_key=True, index=True)
-    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
-    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
-
-    # Raw and cleaned ticket content
-    subject    = Column(String(512), nullable=True)
-    body       = Column(Text, nullable=True)
-
-    # Classification
-    intent     = Column(String, nullable=True, doc="Top-level intent category")
-    sub_intent = Column(String, nullable=True, doc="Sub-category of intent (e.g. password_reset)")
-    confidence = Column(Float,  nullable=True, doc="Classifier confidence score 0-1")
-
-    # Generated response
-    response   = Column(Text,   nullable=True)
-    status     = Column(String, default="open", nullable=False)
+    sub_intent = Column(
+        String,
+        nullable=True,
+        doc="Sub-category of intent (e.g. password_reset)",
+    )
 
     confidence = Column(
         Float,
@@ -131,13 +106,6 @@ class Ticket(Base):
         nullable=False,
         doc="Timestamp when the ticket was created",
     )
-
-    # -------------------------------------------------
-    # TODO (Future Enhancements)
-    # -------------------------------------------------
-    # - updated_at timestamp
-    # - resolved_at timestamp
-    # - user_id (foreign key)
 
     # -------------------------------------------------
     # Relationships

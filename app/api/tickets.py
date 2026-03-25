@@ -45,89 +45,30 @@ from app.services.response_generator import generate_response
 from app.core.config import settings
 from fastapi import status
 
-# Configure logging
 logger = logging.getLogger(__name__)
+router = APIRouter(prefix="/tickets", tags=["Tickets"])
 
-
-def _run_ticket_automation(ticket: Ticket, db: Session) -> Ticket:
+# ---------------------------------------------------------------------------
+# Internal automation helper
+# ---------------------------------------------------------------------------
+ 
+async def _run_ticket_automation(ticket: Ticket, db: Session) -> Ticket:
     """
     Run the AI automation pipeline for a given ticket.
-
-    This function encapsulates the orchestration of:
     - Intent classification
     - Similarity search against resolved tickets
     - Resolution decision (auto-resolve vs escalate)
     - Response generation for auto-resolved tickets
-
-    It updates and persists the ticket accordingly and returns the
-    refreshed instance.
     """
     # Classify intent
     classification = classify_intent(ticket.message)
     intent = classification["intent"]
     confidence = classification["confidence"]
-
-    # ---------------------------------------------------------------------------
-# Internal automation helper
-# ---------------------------------------------------------------------------
- 
-async def _run_ticket_automation(ticket: Ticket, db) -> Ticket:
-    """
-    Classify the ticket text, store classification results, generate a
-    response, and persist everything back to the database.
-    """
-    raw_text = f"{ticket.subject or ''} {ticket.body or ''}".strip()
- 
-    # --- Classification ---------------------------------------------------
-    classification = classify_intent(raw_text)
- 
-    intent     = classification.get("intent")
-    confidence = classification.get("confidence")
     sub_intent = classification.get("sub_intent")
- 
-    ticket.intent     = intent
-    ticket.confidence = confidence
-    ticket.sub_intent = sub_intent
- 
-    # --- Response generation ---------------------------------------------
-    ticket.response = generate_response(
-        text=raw_text,
-        intent=intent,
-        sub_intent=sub_intent,
-    )
- 
-    db.add(ticket)
-    db.commit()
-    db.refresh(ticket)
-    return ticket
 
     # Update ticket with classification results
     ticket.intent = intent
     ticket.confidence = confidence
-
-    # ---------------------------------------------------------------------------
-# Route handlers (FastAPI-style stubs — wire to your router as needed)
-# ---------------------------------------------------------------------------
- 
-def create_ticket_handler(payload: dict, db) -> Ticket:
-    """Create a new ticket and run automation."""
-    ticket = Ticket(
-        subject=payload.get("subject"),
-        body=payload.get("body"),
-    )
-    db.add(ticket)
-    db.commit()
-    db.refresh(ticket)
- 
-    import asyncio
-    return asyncio.get_event_loop().run_until_complete(
-        _run_ticket_automation(ticket, db)
-    )
- 
- 
-def get_ticket_handler(ticket_id: int, db) -> Optional[Ticket]:
-    """Fetch a single ticket by ID."""
-    return db.query(Ticket).filter(Ticket.id == ticket_id).first()
 
     # Fetch resolved tickets for similarity search
     resolved_tickets = (
@@ -142,14 +83,10 @@ def get_ticket_handler(ticket_id: int, db) -> Optional[Ticket]:
     )
 
     # Convert to list of dicts for similarity search
-    resolved_tickets_data = []
-    for resolved_ticket in resolved_tickets:
-        resolved_tickets_data.append(
-            {
-                "message": resolved_ticket.message,
-                "response": resolved_ticket.response,
-            }
-        )
+    resolved_tickets_data = [
+        {"message": t.message, "response": t.response}
+        for t in resolved_tickets
+    ]
 
     # Find similar tickets
     similar_result = find_similar_ticket(
@@ -163,45 +100,39 @@ def get_ticket_handler(ticket_id: int, db) -> Optional[Ticket]:
 
     # Process decision
     if decision == "AUTO_RESOLVE":
-        # Generate response
         similar_solution = (
             similar_result["ticket"]["response"] if similar_result else None
         )
-        response = generate_response(intent, ticket.message, similar_solution, sub_intent=sub_intent)
-
-        # Update ticket
+        ticket.response = generate_response(
+            intent,
+            ticket.message,
+            similar_solution=similar_solution,
+            sub_intent=sub_intent,
+        )
         ticket.status = "auto_resolved"
-        ticket.response = response
-
         logger.info(
             f"Ticket {ticket.id} auto-resolved with intent {intent} "
             f"(confidence: {confidence})"
         )
     else:  # ESCALATE
-        # Update ticket
         ticket.status = "escalated"
         ticket.response = None
-
         logger.info(
             f"Ticket {ticket.id} escalated with intent {intent} "
             f"(confidence: {confidence})"
         )
 
     # Save AI results
+    db.add(ticket)
     db.commit()
     db.refresh(ticket)
-
     return ticket
 
-
-router = APIRouter(
-    prefix="/tickets",
-    tags=["Tickets"]
-)
+  
 
 
 @router.post("/", response_model=TicketResponse, status_code=status.HTTP_201_CREATED)
-def create_ticket(
+async def create_ticket(
     ticket_data: TicketCreate,
     db: Session = Depends(get_db),
 ) -> TicketResponse:
@@ -244,7 +175,7 @@ def create_ticket(
         
         # Step 2: Run AI pipeline
         try:
-            ticket = _run_ticket_automation(ticket=ticket, db=db)
+            ticket = await _run_ticket_automation(ticket=ticket, db=db)
             
         except Exception as ai_error:
             # AI failure: escalate for safety (never block user)
