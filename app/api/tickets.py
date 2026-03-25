@@ -184,6 +184,7 @@ def create_ticket(
             ticket.status = "escalated"
             ticket.intent = None
             ticket.confidence = None
+            ticket.sub_intent = None 
             ticket.response = None
             
             db.commit()
