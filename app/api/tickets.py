@@ -26,24 +26,20 @@ from typing import List, Optional
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 import logging
-from typing import Optional
-from app.models.ticket import Ticket
-from app.services.classifier import classify_intent
-from app.services.response_generator import generate_response
 
 from app.schemas.ticket import (
     TicketCreate,
     TicketResponse,
     TicketList,
 )
-from app.db.session import get_db
 from app.models.ticket import Ticket
 from app.services.classifier import classify_intent
-from app.services.similarity_search import find_similar_ticket
-from app.services.decision_engine import decide_resolution
 from app.services.response_generator import generate_response
+from app.db.session import get_db
 from app.core.config import settings
 from fastapi import status
+from app.services.similarity_search import find_similar_ticket
+from app.services.decision_engine import decide_resolution
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/tickets", tags=["Tickets"])
@@ -133,7 +129,7 @@ def _run_ticket_automation(ticket: Ticket, db: Session) -> Ticket:
 
 
 @router.post("/", response_model=TicketResponse, status_code=status.HTTP_201_CREATED)
-async def create_ticket(
+def create_ticket(
     ticket_data: TicketCreate,
     db: Session = Depends(get_db),
 ) -> TicketResponse:
