@@ -216,7 +216,7 @@ def generate_response(intent: str, original_message: str, similar_solution: Opti
         cleaned_solution = _clean_similar_solution(similar_solution)
         return f"I understand you're experiencing an issue. Based on a similar case, here's what helped: {cleaned_solution}"
 
-   # Priority 2: sub_intent fast-path — skip keyword detection entirely
+    # Priority 2: sub_intent fast-path — skip keyword detection entirely
     if sub_intent is not None:
         idx = _sub_intent_to_index.get(sub_intent)
         if idx is not None and intent in response_templates:
