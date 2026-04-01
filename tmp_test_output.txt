@@ -1,0 +1,27 @@
+﻿[1m============================= test session starts =============================[0m
+[1mcollecting ... [0mcollected 11 items
+
+tests/test_response_generator.py::test_generate_response_openai_fallback_to_template [32mPASSED[0m[32m [  9%][0m
+tests/test_response_generator.py::test_generate_response_openai_success [32mPASSED[0m[32m [ 18%][0m
+tests/test_response_generator.py::test_generate_response_similarity_priority [32mPASSED[0m[32m [ 27%][0m
+tests/test_response_generator.py::test_generate_response_similarity_low_quality [32mPASSED[0m[32m [ 36%][0m
+tests/test_response_generator.py::test_generate_response_no_openai_config [32mPASSED[0m[32m [ 45%][0m
+tests/test_response_generator.py::test_generate_response_fallback_chain [32mPASSED[0m[32m [ 54%][0m
+tests/test_response_generator.py::test_generate_response_similarity_at_threshold [32mPASSED[0m[32m [ 63%][0m
+tests/test_response_generator.py::test_generate_response_sanitizes_pii [32mPASSED[0m[32m [ 72%][0m
+tests/test_resolver.py::test_resolver_returns_string [32mPASSED[0m[32m              [ 81%][0m
+tests/test_resolver.py::test_resolver_uses_similar_solution [32mPASSED[0m[32m       [ 90%][0m
+tests/test_resolver.py::test_resolver_fallback_response [32mPASSED[0m[32m           [100%][0m
+
+============================ slowest 10 durations =============================
+0.01s call     tests/test_response_generator.py::test_generate_response_similarity_priority
+0.00s call     tests/test_response_generator.py::test_generate_response_openai_fallback_to_template
+0.00s setup    tests/test_response_generator.py::test_generate_response_openai_fallback_to_template
+0.00s call     tests/test_response_generator.py::test_generate_response_similarity_at_threshold
+0.00s call     tests/test_response_generator.py::test_generate_response_similarity_low_quality
+0.00s call     tests/test_response_generator.py::test_generate_response_openai_success
+0.00s call     tests/test_response_generator.py::test_generate_response_no_openai_config
+0.00s call     tests/test_response_generator.py::test_generate_response_fallback_chain
+0.00s call     tests/test_response_generator.py::test_generate_response_sanitizes_pii
+0.00s call     tests/test_resolver.py::test_resolver_returns_string
+[32m============================= [32m[1m11 passed[0m[32m in 0.61s[0m[32m ==============================[0m

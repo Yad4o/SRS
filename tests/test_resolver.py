@@ -1,3 +1,8 @@
+"""
+Unit tests explicitly importing the internal `generate_response` function to isolate its 
+generation logic from the overall ticket pipeline, deliberately bypassing the 'DO NOT use directly' 
+module header instruction to test logic in isolation.
+"""
 from app.services.response_generator import generate_response
 
 
@@ -34,7 +39,7 @@ def test_resolver_uses_similar_solution():
 
 def test_resolver_fallback_response():
     """
-    Unknown intent should return safe fallback.
+    Unknown intent should return safe fallback with source label "fallback".
     """
     response = generate_response(
         intent="unknown",
@@ -44,3 +49,5 @@ def test_resolver_fallback_response():
     assert isinstance(response_text, str)
     assert isinstance(source_label, str)
     assert len(response_text) > 0
+    # Unknown intents must use "fallback" source, not "template"
+    assert source_label == "fallback"
