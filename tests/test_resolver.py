@@ -41,8 +41,6 @@ def test_resolver_fallback_response():
         original_message="Something wrong"
     )
     response_text, source_label = response
-    assert isinstance(response, tuple)
-    assert len(response) == 2
     assert isinstance(response_text, str)
     assert isinstance(source_label, str)
     assert len(response_text) > 0

@@ -81,8 +81,11 @@ def test_response_generator_fixes():
     result_without_solution = generate_response('general_query', 'random question', None)
     print(f'Integrated result without solution: {result_without_solution}')
     
+    # Extract response text from tuple
+    response_text, source_label = result_without_solution
+    
     # Should use configurable support email (no similar solution) - STATUS_PAGE_URL not in general_query template 2
-    assert settings.SUPPORT_EMAIL in result_without_solution, "Should use configurable support email"
+    assert settings.SUPPORT_EMAIL in response_text, "Should use configurable support email"
     print("✅ PASS (all fixes integrated)\n")
     
     print("🎉 All nitpick fixes are working correctly!")

@@ -22,7 +22,8 @@ def test_response_generator_fixes():
     print("Test 2 - Wrapper prefix removal:")
     nested_wrapped = "I understand you're experiencing an issue. Based on a similar case, here's what helped: I understand you're experiencing an issue. Based on a similar case, here's what helped: Reset password using forgot link"
     result = generate_response('login_issue', 'Cannot login', nested_wrapped)
-    assert 'Reset password using forgot link' in result, "Cleaned solution should be present"
+    response_text, source_label = result
+    assert 'Reset password using forgot link' in response_text, "Cleaned solution should be present"
     print("✅ PASS (nested wrapper cleaned)")
     print("✅ PASS (wrapper removal working)\n")
     
@@ -31,10 +32,14 @@ def test_response_generator_fixes():
     result1 = generate_response('login_issue', 'Cannot login')
     result2 = generate_response('login_issue', 'I forgot my password')
     
+    # Extract response texts from tuples
+    response_text1, source_label1 = result1
+    response_text2, source_label2 = result2
+    
     # result1 should use default template (no password reset text)
-    assert "reset your password" not in result1.lower(), "Cannot login should use default template"
+    assert "reset your password" not in response_text1.lower(), "Cannot login should use default template"
     # result2 should match password reset template
-    assert "reset your password" in result2.lower(), "I forgot my password should match password reset template"
+    assert "reset your password" in response_text2.lower(), "I forgot my password should match password reset template"
     
     print("✅ PASS ('Cannot login' -> default template)")
     print("✅ PASS ('I forgot my password' -> password reset template)\n")
@@ -42,11 +47,13 @@ def test_response_generator_fixes():
     # Test 4: Configurable placeholders work
     print("Test 4 - Configurable placeholders:")
     result_with_solution = generate_response('login_issue', 'Cannot login', 'Reset password using forgot link')
-    assert 'Reset password using forgot link' in result_with_solution, "Similar solution should be cleaned and included"
+    response_text_with, source_label_with = result_with_solution
+    assert 'Reset password using forgot link' in response_text_with, "Similar solution should be cleaned and included"
     
     result_without_solution = generate_response('general_query', 'random question', None)
+    response_text_without, source_label_without = result_without_solution
     # Should use configurable support email (STATUS_PAGE_URL not in general_query template 2)
-    assert settings.SUPPORT_EMAIL in result_without_solution, "Should use configurable SUPPORT_EMAIL"
+    assert settings.SUPPORT_EMAIL in response_text_without, "Should use configurable SUPPORT_EMAIL"
     print("✅ PASS (similar solution cleaned)")
     print("✅ PASS (uses configurable STATUS_PAGE_URL)")
     print("✅ PASS (uses configurable SUPPORT_EMAIL)")
@@ -55,8 +62,9 @@ def test_response_generator_fixes():
     # Test 5: Stronger normalization works
     print("Test 5 - Stronger normalization:")
     result = generate_response('general_query', 'What is the COST? It\'s too expensive!')
+    response_text, source_label = result
     # Should match billing template (template 1) which contains pricing info
-    assert "pricing" in result.lower() or "plan" in result.lower(), "Stronger normalization should match 'COST' as billing keyword"
+    assert "pricing" in response_text.lower() or "plan" in response_text.lower(), "Stronger normalization should match 'COST' as billing keyword"
     print("✅ PASS (handles punctuation - 'COST' correctly matched as billing keyword)")
     print("✅ PASS (stronger normalization working)\n")
     
@@ -64,7 +72,8 @@ def test_response_generator_fixes():
     print("Test 6 - Similar solution cleaning:")
     long_solution = "Reset your password. " * 50
     result = generate_response('login_issue', 'Cannot login', long_solution)
-    assert len(result) <= 1100, f"Length should be bounded: {len(result)} <= 1100"
+    response_text, source_label = result
+    assert len(response_text) <= 1100, f"Length should be bounded: {len(response_text)} <= 1100"
     print("✅ PASS (length limited to ~1050 with wrapper)")
     print("✅ PASS (similar solution cleaning working)\n")
     

@@ -233,7 +233,7 @@ class TestRealAIImplementation:
         response_text, source_label = response
         assert isinstance(response_text, str)
         assert isinstance(source_label, str)
-        assert len(response) > 0
+        assert len(response_text) > 0
 
     def test_real_decision_engine(self):
         """Test real decision engine with realistic confidence values."""
@@ -274,7 +274,8 @@ class TestEndToEndScenarios:
         # Setup mocks
         mock_classify.return_value = {"intent": "login_issue", "confidence": 0.95}  # Match actual classifier
         mock_similarity.return_value = {
-            "ticket": {"response": "Reset your password using forgot password link"}
+            "ticket": {"response": "Reset your password using forgot password link"},
+            "similarity_score": 0.8
         }
         mock_decision.return_value = "AUTO_RESOLVE"
         mock_response.return_value = ("I understand you're experiencing a login issue. Based on a similar case, Reset your password using forgot password link", "similarity")

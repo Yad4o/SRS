@@ -67,8 +67,8 @@ def _call_openai(intent: str, sub_intent: Optional[str], message: str) -> Option
         
         return response.choices[0].message.content.strip()
         
-    except Exception:
-        # Any exception with OpenAI should be silently handled
+    except openai.OpenAIError:
+        # Any OpenAI-specific exception should be silently handled
         return None
 
 
@@ -174,10 +174,6 @@ def generate_response(intent: str, original_message: str, similar_solution: Opti
     # Priority 3: Template-based response
     template_response, _ = _select_template_with_sub_intent(intent, original_message, sub_intent)
     return template_response, "template"
-    
-    # Note: We should never reach here due to template fallback
-    # But if we do, return hardcoded fallback
-    return "I've received your message and will do my best to assist you.", "fallback"
 
 
 # ---------------------------------------------------------------------------

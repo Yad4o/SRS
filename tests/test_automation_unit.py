@@ -17,6 +17,7 @@ from sqlalchemy.orm import Session
 from datetime import datetime
 
 from app.models.ticket import Ticket
+from app.models.feedback import Feedback
 from app.services.decision_engine import decide_resolution, get_confidence_threshold, set_confidence_threshold
 from app.services.response_generator import generate_response
 from app.api.tickets import _run_ticket_automation
@@ -347,7 +348,7 @@ class TestResponseGenerator:
     @patch('app.services.response_generator.generate_response')
     def test_generate_response_with_similar_solution(self, mock_generate):
         """Test response generation with similar solution."""
-        mock_generate.return_value = "I understand you're experiencing a login issue. Based on a similar case, Reset your password"
+        mock_generate.return_value = ("I understand you're experiencing a login issue. Based on a similar case, Reset your password", "similar_solution")
         
         from app.services.response_generator import generate_response
         result = generate_response(
@@ -356,8 +357,9 @@ class TestResponseGenerator:
             similar_solution="Reset your password"
         )
         
-        assert "Reset your password" in result
-        assert "similar case" in result.lower()
+        assert "Reset your password" in result[0]
+        assert "similar case" in result[0].lower()
+        assert result[1] == "similar_solution"
         mock_generate.assert_called_once()
 
     @patch('app.services.response_generator.generate_response')
@@ -377,7 +379,7 @@ class TestResponseGenerator:
         assert isinstance(response_text, str)
         assert isinstance(source_label, str)
         assert len(response_text) > 10
-        assert "login" not in response_text.lower() and "login" not in response_text
+        assert "login" not in response_text.lower()
 
     @patch('app.services.response_generator.generate_response')
     def test_generate_response_unknown_intent(self, mock_generate):
@@ -397,10 +399,10 @@ class TestResponseGenerator:
         assert isinstance(source_label, str)
         assert len(response_text) > 10
 
-    @patch('app.services.response_generator.generate_response')
-    def test_generate_response_error_handling(self, mock_generate):
+    @patch('app.services.response_generator._call_openai')
+    def test_generate_response_error_handling(self, mock_openai):
         """Test error handling in response generator."""
-        mock_generate.side_effect = Exception("Response generation failed")
+        mock_openai.side_effect = Exception("OpenAI API failed")
         
         result = generate_response(
             intent="login_issue",
@@ -408,12 +410,13 @@ class TestResponseGenerator:
             similar_solution=None
         )
         
-        # Should return safe fallback
+        # Should return template fallback when OpenAI fails
         assert isinstance(result, tuple)
         assert len(result) == 2
         response_text, source_label = result
         assert isinstance(response_text, str)
         assert isinstance(source_label, str)
+        assert source_label == "template"
         assert len(response_text) > 0
 
     @patch('app.services.response_generator.generate_response')
@@ -450,7 +453,8 @@ class TestTicketAutomation:
         # Setup mocks
         mock_classify.return_value = {"intent": "login_issue", "confidence": 0.95}
         mock_similarity.return_value = {
-            "ticket": {"response": "Reset your password"}
+            "ticket": {"response": "Reset your password"},
+            "similarity_score": 0.8
         }
         mock_decision.return_value = "AUTO_RESOLVE"
         

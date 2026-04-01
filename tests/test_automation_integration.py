@@ -132,6 +132,7 @@ class TestTicketLifecycle:
         assert ticket_data["confidence"] == 0.95
         assert ticket_data["response"] is not None
         assert "password" in ticket_data["response"].lower()
+        assert ticket_data["response_source"] == "similarity"
         
         # Note: Database record verification removed since it uses actual classifier
         # The API response and database should match, but integration tests use real classifier
