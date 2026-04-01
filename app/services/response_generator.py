@@ -42,6 +42,7 @@ def _call_openai(intent: str, sub_intent: Optional[str], message: str) -> Option
     """
     try:
         from openai import OpenAI
+        from openai import APIError
         
         client = OpenAI(
             api_key=settings.OPENAI_API_KEY,
@@ -67,7 +68,7 @@ def _call_openai(intent: str, sub_intent: Optional[str], message: str) -> Option
         
         return response.choices[0].message.content.strip()
         
-    except openai.OpenAIError:
+    except APIError:
         # Any OpenAI-specific exception should be silently handled
         return None
 

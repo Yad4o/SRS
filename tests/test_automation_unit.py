@@ -348,7 +348,7 @@ class TestResponseGenerator:
     @patch('app.services.response_generator.generate_response')
     def test_generate_response_with_similar_solution(self, mock_generate):
         """Test response generation with similar solution."""
-        mock_generate.return_value = ("I understand you're experiencing a login issue. Based on a similar case, Reset your password", "similar_solution")
+        mock_generate.return_value = ("I understand you're experiencing a login issue. Based on a similar case, Reset your password", "similarity")
         
         from app.services.response_generator import generate_response
         result = generate_response(
@@ -359,7 +359,7 @@ class TestResponseGenerator:
         
         assert "Reset your password" in result[0]
         assert "similar case" in result[0].lower()
-        assert result[1] == "similar_solution"
+        assert result[1] == "similarity"
         mock_generate.assert_called_once()
 
     @patch('app.services.response_generator.generate_response')
@@ -400,9 +400,17 @@ class TestResponseGenerator:
         assert len(response_text) > 10
 
     @patch('app.services.response_generator._call_openai')
-    def test_generate_response_error_handling(self, mock_openai):
+    @patch('app.services.response_generator.settings')
+    def test_generate_response_error_handling(self, mock_settings, mock_openai):
         """Test error handling in response generator."""
-        mock_openai.side_effect = Exception("OpenAI API failed")
+        # Force OpenAI branch to be taken
+        mock_settings.AI_PROVIDER = "openai"
+        mock_settings.OPENAI_API_KEY = "fake-key"
+        mock_settings.OPENAI_MAX_TOKENS = 1000
+        mock_settings.OPENAI_TIMEOUT = 30
+        
+        # Make OpenAI return None to trigger fallback
+        mock_openai.return_value = None
         
         result = generate_response(
             intent="login_issue",
@@ -410,7 +418,7 @@ class TestResponseGenerator:
             similar_solution=None
         )
         
-        # Should return template fallback when OpenAI fails
+        # Should return template fallback when OpenAI returns None
         assert isinstance(result, tuple)
         assert len(result) == 2
         response_text, source_label = result

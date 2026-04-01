@@ -291,11 +291,13 @@ class TestEndToEndScenarios:
         assert ticket_data["intent"] == "login_issue"
         assert ticket_data["confidence"] == 0.95  # Actual classifier confidence
         assert "Reset your password" in ticket_data["response"]
+        assert ticket_data["response_source"] == "similarity"
         
         # Verify database state
         db_ticket = db_session.query(Ticket).filter(Ticket.id == ticket_data["id"]).first()
         assert db_ticket.status == "auto_resolved"  # Updated to match API output
         assert db_ticket.intent == "login_issue"
+        assert db_ticket.response_source == "similarity"
 
     @patch('app.api.tickets.classify_intent')
     @patch('app.api.tickets.decide_resolution')
@@ -449,6 +451,8 @@ class TestSystemIntegration:
             assert db_ticket.message == "Database integration test"
             assert db_ticket.intent == "login_issue"
             assert db_ticket.status == "auto_resolved"
+            assert db_ticket.response_source == "template"
+            assert ticket_data["response_source"] == "template"
 
     def test_api_endpoints_integration(self, client, db_session):
         """Test API endpoints integration."""
