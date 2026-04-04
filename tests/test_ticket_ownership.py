@@ -34,19 +34,6 @@ def temp_db():
 
 
 @pytest.fixture(scope="function")
-def db_session(temp_db):
-    """Create database session for tests."""
-    engine = create_engine(f"sqlite:///{temp_db}")
-    TestingSessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
-    Base.metadata.create_all(bind=engine)
-    session = TestingSessionLocal()
-    try:
-        yield session
-    finally:
-        session.close()
-
-
-@pytest.fixture(scope="function")
 def client_with_temp_db(temp_db):
     """Create test client with temporary database."""
     engine = create_engine(

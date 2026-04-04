@@ -186,7 +186,17 @@ def create_ticket(
                 raise HTTPException(
                     status_code=status.HTTP_401_UNAUTHORIZED,
                     detail="Invalid or expired authentication token"
-                )
+                ) from None
+
+        # Verify user exists if user_id is provided (token auth)
+        if user_id is not None:
+            from app.models.user import User
+            user_exists = db.query(User).filter(User.id == user_id).first()
+            if not user_exists:
+                raise HTTPException(
+                    status_code=status.HTTP_401_UNAUTHORIZED,
+                    detail="Invalid authentication token"
+                ) from None
 
         # Step 1: Create ticket with initial status
         ticket = Ticket(
@@ -275,7 +285,7 @@ def list_tickets(
                 raise HTTPException(
                     status_code=status.HTTP_401_UNAUTHORIZED,
                     detail="Invalid or expired authentication token"
-                )
+                ) from None
 
         # Build query
         query = db.query(Ticket)
