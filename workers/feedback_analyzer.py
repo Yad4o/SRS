@@ -84,6 +84,7 @@ def fetch_feedback_with_tickets(db) -> List[Dict]:
             "created_at": fb.created_at.isoformat() if fb.created_at else None,
             "intent": ticket.intent,
             "ticket_status": ticket.status,
+            "quality_score": ticket.quality_score,
         }
         for fb, ticket in rows
     ]
@@ -132,13 +133,15 @@ def analyze_feedback(records: List[Dict]) -> Dict:
     all_resolved = [r["resolved"] for r in records if r["resolved"] is not None]
 
     # Per-intent aggregation
-    by_intent: Dict[str, Dict] = defaultdict(lambda: {"ratings": [], "resolved": []})
+    by_intent: Dict[str, Dict] = defaultdict(lambda: {"ratings": [], "resolved": [], "quality_scores": []})
     for rec in records:
         intent_key = rec.get("intent") or "unknown"
         if rec["rating"] is not None:
             by_intent[intent_key]["ratings"].append(rec["rating"])
         if rec["resolved"] is not None:
             by_intent[intent_key]["resolved"].append(rec["resolved"])
+        if rec.get("quality_score") is not None:
+            by_intent[intent_key]["quality_scores"].append(rec["quality_score"])
 
     intent_summary = {
         intent: {
@@ -147,6 +150,7 @@ def analyze_feedback(records: List[Dict]) -> Dict:
             "resolution_rate": round(sum(vals["resolved"]) / len(vals["resolved"]), 3)
             if vals["resolved"]
             else 0.0,
+            "average_quality_score": _safe_avg(vals["quality_scores"]),
         }
         for intent, vals in by_intent.items()
     }
@@ -179,6 +183,9 @@ def analyze_feedback(records: List[Dict]) -> Dict:
         for k, v in Counter(r["rating"] for r in records if r["rating"] is not None).items()
     }
 
+    # Compute overall quality score
+    all_quality_scores = [r["quality_score"] for r in records if r.get("quality_score") is not None]
+
     return {
         "total_feedback": total,
         "average_rating": _safe_avg(all_ratings),
@@ -186,6 +193,7 @@ def analyze_feedback(records: List[Dict]) -> Dict:
         "by_intent": intent_summary,
         "by_ticket_status": status_summary,
         "rating_distribution": rating_distribution,
+        "average_quality_score": _safe_avg(all_quality_scores),
     }
 
 

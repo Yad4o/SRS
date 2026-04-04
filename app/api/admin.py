@@ -126,6 +126,19 @@ def get_metrics(
         
         feedback_resolution_rate = (resolved_feedback_count / total_feedback * 100) if total_feedback > 0 else 0
         
+        # Quality metrics
+        low_quality_tickets = db.query(Ticket).filter(
+            Ticket.quality_score.isnot(None),
+            Ticket.quality_score < 0.5
+        ).count()
+        
+        quality_by_intent = (
+            db.query(Ticket.intent, func.avg(Ticket.quality_score))
+            .filter(Ticket.quality_score.isnot(None))
+            .group_by(Ticket.intent)
+            .all()
+        )
+        
         metrics = {
             "tickets": {
                 "total": total_tickets,
@@ -141,6 +154,10 @@ def get_metrics(
                 "average_rating": round(average_rating, 2),
                 "resolution_rate": round(feedback_resolution_rate, 2),
                 "resolved_count": resolved_feedback_count
+            },
+            "quality": {
+                "low_quality_count": low_quality_tickets,
+                "by_intent": {intent: round(float(score), 2) for intent, score in quality_by_intent if intent}
             },
             "system_health": {
                 "auto_resolve_rate_status": "good" if auto_resolve_rate >= 70 else "needs_improvement",

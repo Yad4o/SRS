@@ -365,3 +365,156 @@ class TestFeedbackAPI:
         assert retrieved_feedback["rating"] == 4
         assert retrieved_feedback["resolved"] is True
         assert "created_at" in retrieved_feedback
+
+
+def test_quality_score_high_rating(temp_db):
+    """Test quality score calculation for high rating with resolved=True."""
+    # Setup temporary database
+    engine = create_engine(f"sqlite:///{temp_db}")
+    TestingSessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
+    Base.metadata.create_all(bind=engine)
+    
+    # Override dependency
+    def override_get_db():
+        try:
+            db = TestingSessionLocal()
+            yield db
+        finally:
+            db.close()
+    
+    app.dependency_overrides[get_db] = override_get_db
+    client = TestClient(app)
+    
+    try:
+        # Create a ticket with status="auto_resolved"
+        db = TestingSessionLocal()
+        ticket = Ticket(
+            message="I need help with login",
+            status="auto_resolved",
+            intent="login_issue",
+            confidence=0.9,
+            response="Please reset your password"
+        )
+        db.add(ticket)
+        db.commit()
+        db.refresh(ticket)
+        db.close()
+        
+        # POST feedback with rating=5, resolved=True
+        feedback_data = {
+            "ticket_id": ticket.id,
+            "rating": 5,
+            "resolved": True
+        }
+        feedback_response = client.post("/feedback/", json=feedback_data)
+        assert feedback_response.status_code == 201
+        
+        # Query the ticket directly from the DB
+        db = TestingSessionLocal()
+        db_ticket = db.query(Ticket).filter(Ticket.id == ticket.id).first()
+        db.close()
+        
+        # Assert ticket.quality_score == 1.0 (5/5 + 0.1 = 1.1, capped to 1.0)
+        assert db_ticket.quality_score == 1.0
+        
+    finally:
+        app.dependency_overrides.clear()
+
+
+def test_quality_score_low_rating(temp_db):
+    """Test quality score calculation for low rating with resolved=False."""
+    # Setup temporary database
+    engine = create_engine(f"sqlite:///{temp_db}")
+    TestingSessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
+    Base.metadata.create_all(bind=engine)
+    
+    # Override dependency
+    def override_get_db():
+        try:
+            db = TestingSessionLocal()
+            yield db
+        finally:
+            db.close()
+    
+    app.dependency_overrides[get_db] = override_get_db
+    client = TestClient(app)
+    
+    try:
+        # Create a ticket with status="auto_resolved"
+        db = TestingSessionLocal()
+        ticket = Ticket(
+            message="I need help with payment",
+            status="auto_resolved",
+            intent="payment_issue",
+            confidence=0.8,
+            response="Please check your billing information"
+        )
+        db.add(ticket)
+        db.commit()
+        db.refresh(ticket)
+        db.close()
+        
+        # POST feedback with rating=1, resolved=False
+        feedback_data = {
+            "ticket_id": ticket.id,
+            "rating": 1,
+            "resolved": False
+        }
+        feedback_response = client.post("/feedback/", json=feedback_data)
+        assert feedback_response.status_code == 201
+        
+        # Query the ticket directly from the DB
+        db = TestingSessionLocal()
+        db_ticket = db.query(Ticket).filter(Ticket.id == ticket.id).first()
+        db.close()
+        
+        # Assert ticket.quality_score == 0.1 (1/5 - 0.1 = 0.1)
+        assert db_ticket.quality_score == 0.1
+        
+    finally:
+        app.dependency_overrides.clear()
+
+
+def test_quality_score_none_before_feedback(temp_db):
+    """Test quality score is None before feedback is submitted."""
+    # Setup temporary database
+    engine = create_engine(f"sqlite:///{temp_db}")
+    TestingSessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
+    Base.metadata.create_all(bind=engine)
+    
+    # Override dependency
+    def override_get_db():
+        try:
+            db = TestingSessionLocal()
+            yield db
+        finally:
+            db.close()
+    
+    app.dependency_overrides[get_db] = override_get_db
+    client = TestClient(app)
+    
+    try:
+        # Create a ticket with status="auto_resolved"
+        db = TestingSessionLocal()
+        ticket = Ticket(
+            message="I need help with account",
+            status="auto_resolved",
+            intent="account_issue",
+            confidence=0.7,
+            response="Please update your profile information"
+        )
+        db.add(ticket)
+        db.commit()
+        db.refresh(ticket)
+        db.close()
+        
+        # Query it directly without submitting any feedback
+        db = TestingSessionLocal()
+        db_ticket = db.query(Ticket).filter(Ticket.id == ticket.id).first()
+        db.close()
+        
+        # Assert ticket.quality_score is None
+        assert db_ticket.quality_score is None
+        
+    finally:
+        app.dependency_overrides.clear()
