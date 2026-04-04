@@ -222,7 +222,8 @@ def find_similar_ticket(new_message: str, resolved_tickets: List[Dict], similari
         return {
             "matched_text": best_match,
             "similarity_score": round(best_similarity, 3),
-            "ticket": best_ticket  # Include the original ticket for access to response/solution
+            "ticket": best_ticket,  # Include the original ticket for access to response/solution
+            "quality_score": best_ticket.get("quality_score")
         }
     
     return None

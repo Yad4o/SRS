@@ -106,6 +106,12 @@ class Ticket(Base):
         doc="Which path generated the response: similarity, openai, template, or fallback",
     )
 
+    quality_score = Column(
+        Float,
+        nullable=True,
+        doc="Normalized quality score from feedback (0.0-1.0). None if no feedback yet.",
+    )
+
     created_at = Column(
         DateTime,
         default=lambda: datetime.now(timezone.utc),

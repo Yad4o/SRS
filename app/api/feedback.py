@@ -103,6 +103,12 @@ def create_feedback(
         db.commit()
         db.refresh(feedback)
         
+        # Compute quality score for the ticket
+        base_score = feedback_data.rating / 5.0
+        resolution_boost = 0.1 if feedback_data.resolved else -0.1
+        ticket.quality_score = max(0.0, min(1.0, base_score + resolution_boost))
+        db.commit()
+        
         logger.info(f"Feedback created for ticket {feedback_data.ticket_id}: rating={feedback_data.rating}, resolved={feedback_data.resolved}")
         
         return FeedbackResponse.model_validate(feedback)

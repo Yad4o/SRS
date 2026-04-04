@@ -1,12 +1,11 @@
 """
-Migration: Add is_archived column to tickets table
+Migration: Add quality_score column to tickets table
 
-This migration adds the 'is_archived' boolean column to the existing tickets
-table. The column is used by the cleanup worker to mark old tickets as archived
-without changing their original status, preserving metrics and similarity-search
-accuracy.
+This migration adds the 'quality_score' column to the existing tickets table
+to support normalized quality scores from feedback (0.0-1.0). The column is nullable
+and defaults to NULL for existing tickets that don't have feedback yet.
 
-Run this migration for existing installations that don't have the is_archived column.
+Run this migration for existing installations that don't have the quality_score column.
 """
 
 import logging
@@ -18,14 +17,15 @@ project_root = Path(__file__).parent.parent
 sys.path.insert(0, str(project_root))
 
 from sqlalchemy import create_engine, text, inspect
+from sqlalchemy.exc import SQLAlchemyError
 from app.core.config import settings
 
 logger = logging.getLogger(__name__)
 
 
-def add_is_archived_column() -> bool:
+def add_quality_score_column() -> bool:
     """
-    Add is_archived column to tickets table if it doesn't exist.
+    Add quality_score column to tickets table if it doesn't exist.
 
     Uses the configured database URL from settings.DATABASE_URL.
 
@@ -40,24 +40,22 @@ def add_is_archived_column() -> bool:
             inspector = inspect(engine)
             columns = [col['name'] for col in inspector.get_columns("tickets")]
 
-            if "is_archived" in columns:
-                logger.info("is_archived column already exists in tickets table")
+            if "quality_score" in columns:
+                logger.info("quality_score column already exists in tickets table")
                 return True
 
-            # Use dialect-aware default for BOOLEAN column
-            dialect_name = engine.dialect.name
-            default_value = "DEFAULT 0" if dialect_name == "sqlite" else "DEFAULT FALSE"
-            
-            conn.execute(
-                text(f"ALTER TABLE tickets ADD COLUMN is_archived BOOLEAN NOT NULL {default_value}")
-            )
+            # Add quality_score column as nullable FLOAT/REAL (matching SQLAlchemy Float)
+            conn.execute(text("ALTER TABLE tickets ADD COLUMN quality_score REAL"))
             conn.commit()
 
-            logger.info("Successfully added is_archived column to tickets table")
+            logger.info("Successfully added quality_score column to tickets table")
             return True
 
+    except SQLAlchemyError as e:
+        logger.exception("Failed to add quality_score column (DB error): %s", e)
+        return False
     except Exception as e:
-        logger.error("Failed to add is_archived column: %s", e)
+        logger.exception("Unexpected error adding quality_score column: %s", e)
         return False
 
 
@@ -67,7 +65,7 @@ def run_migration() -> None:
         level=logging.INFO,
         format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
     )
-    success = add_is_archived_column()
+    success = add_quality_score_column()
     if success:
         print("Migration completed successfully")
     else:

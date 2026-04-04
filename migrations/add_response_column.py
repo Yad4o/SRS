@@ -16,7 +16,7 @@ from pathlib import Path
 project_root = Path(__file__).parent.parent
 sys.path.insert(0, str(project_root))
 
-from sqlalchemy import create_engine, text
+from sqlalchemy import create_engine, text, inspect
 from app.core.config import settings
 
 logger = logging.getLogger(__name__)
@@ -36,9 +36,9 @@ def add_response_column() -> bool:
         engine = create_engine(settings.DATABASE_URL)
         
         with engine.connect() as conn:
-            # Check if response column already exists
-            result = conn.execute(text("PRAGMA table_info(tickets)"))
-            columns = [row[1] for row in result.fetchall()]
+            # Check if response column already exists using dialect-agnostic introspection
+            inspector = inspect(conn)
+            columns = [col['name'] for col in inspector.get_columns("tickets")]
             
             if 'response' in columns:
                 logger.info("Response column already exists in tickets table")

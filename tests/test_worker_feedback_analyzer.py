@@ -358,3 +358,68 @@ class TestParseArgs:
         custom = str(tmp_path / "out.json")
         args = _parse_args(["--output", custom])
         assert str(args.output) == custom
+
+
+def test_analyze_feedback_includes_quality_score_in_output():
+    """Test that analyze_feedback includes quality score in output."""
+    from workers.feedback_analyzer import analyze_feedback
+    
+    # Create records list with _make_record() calls, adding quality_score key to each
+    records = [
+        _make_record(rating=5, resolved=True) | {"quality_score": 0.9},
+        _make_record(rating=3, resolved=False) | {"quality_score": 0.5}
+    ]
+    
+    # Call analyze_feedback(records)
+    result = analyze_feedback(records)
+    
+    # Assert "average_quality_score" is in the result
+    assert "average_quality_score" in result
+    assert result["average_quality_score"] == 0.7  # (0.9 + 0.5) / 2
+    
+    # Assert result["by_intent"]["login_issue"]["average_quality_score"] is not None
+    assert "by_intent" in result
+    assert "login_issue" in result["by_intent"]
+    assert "average_quality_score" in result["by_intent"]["login_issue"]
+    assert result["by_intent"]["login_issue"]["average_quality_score"] == 0.7
+
+
+def test_fetch_feedback_includes_quality_score(db_session):
+    """Test that fetch_feedback_with_tickets includes quality_score in results."""
+    from workers.feedback_analyzer import fetch_feedback_with_tickets
+    
+    # Create a ticket with a quality_score set (e.g., 0.8)
+    from app.models.ticket import Ticket
+    from app.models.feedback import Feedback
+    
+    ticket = Ticket(
+        message="Test message",
+        status="auto_resolved",
+        intent="login_issue",
+        confidence=0.9,
+        response="Test response",
+        quality_score=0.8
+    )
+    db_session.add(ticket)
+    db_session.commit()
+    db_session.refresh(ticket)
+    
+    # Create feedback for that ticket
+    feedback = Feedback(
+        ticket_id=ticket.id,
+        rating=4,
+        resolved=True
+    )
+    db_session.add(feedback)
+    db_session.commit()
+    db_session.refresh(feedback)
+    
+    # Call fetch_feedback_with_tickets(db_session)
+    result = fetch_feedback_with_tickets(db_session)
+    
+    # Assert "quality_score" is in the first result
+    assert len(result) == 1
+    assert "quality_score" in result[0]
+    
+    # Assert result[0]["quality_score"] == 0.8
+    assert result[0]["quality_score"] == 0.8

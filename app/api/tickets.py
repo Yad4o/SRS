@@ -81,7 +81,7 @@ def _run_ticket_automation(ticket: Ticket, db: Session) -> Ticket:
 
     # Convert to list of dicts for similarity search
     resolved_tickets_data = [
-        {"message": t.message, "response": t.response}
+        {"message": t.message, "response": t.response, "quality_score": t.quality_score}
         for t in resolved_tickets
     ]
 
@@ -92,6 +92,9 @@ def _run_ticket_automation(ticket: Ticket, db: Session) -> Ticket:
         similarity_threshold=settings.SIMILARITY_THRESHOLD,
     )
 
+    # Extract similar quality score
+    similar_quality_score = similar_result.get("quality_score") if similar_result else None
+
     # Make decision
     decision = decide_resolution(confidence)
 
@@ -99,9 +102,6 @@ def _run_ticket_automation(ticket: Ticket, db: Session) -> Ticket:
     if decision == "AUTO_RESOLVE":
         similar_solution = (
             similar_result["ticket"]["response"] if similar_result else None
-        )
-        similar_quality_score = (
-            similar_result["similarity_score"] if similar_result else None
         )
         response_text, response_source = generate_response(
             intent,
