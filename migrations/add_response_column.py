@@ -37,7 +37,7 @@ def add_response_column() -> bool:
         
         with engine.connect() as conn:
             # Check if response column already exists using dialect-agnostic introspection
-            inspector = inspect(engine)
+            inspector = inspect(conn)
             columns = [col['name'] for col in inspector.get_columns("tickets")]
             
             if 'response' in columns:

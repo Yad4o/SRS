@@ -44,10 +44,12 @@ def add_is_archived_column() -> bool:
                 logger.info("is_archived column already exists in tickets table")
                 return True
 
+            # Use dialect-aware default for BOOLEAN column
+            dialect_name = engine.dialect.name
+            default_value = "DEFAULT 0" if dialect_name == "sqlite" else "DEFAULT FALSE"
+            
             conn.execute(
-                # DEFAULT 0 is SQLite-specific syntax; this codebase targets SQLite
-                # (see existing migrations). If migrating to another RDBMS, use DEFAULT FALSE.
-                text("ALTER TABLE tickets ADD COLUMN is_archived BOOLEAN NOT NULL DEFAULT 0")
+                text(f"ALTER TABLE tickets ADD COLUMN is_archived BOOLEAN NOT NULL {default_value}")
             )
             conn.commit()
 
