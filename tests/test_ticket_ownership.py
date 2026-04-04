@@ -53,24 +53,27 @@ def client_with_temp_db(temp_db):
     TestingSessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
     Base.metadata.create_all(bind=engine)
     
+    # Create a single db session for the test to use
+    db = TestingSessionLocal()
+    
     def override_get_db():
         try:
-            db = TestingSessionLocal()
             yield db
         finally:
-            db.close()
+            pass  # Don't close here, test will close it
     
     app.dependency_overrides[get_db] = override_get_db
     client = TestClient(app)
     try:
-        yield client
+        yield client, db  # Yield both client and db session
     finally:
         app.dependency_overrides.clear()
+        db.close()
 
 
 def test_create_ticket_without_token(client_with_temp_db, temp_db):
     """Test POST /tickets without token creates ticket with user_id=None."""
-    client = client_with_temp_db
+    client, _ = client_with_temp_db
     
     # Create ticket without authentication
     response = client.post("/tickets/", json={"message": "I need help with login"})
@@ -94,7 +97,7 @@ def test_create_ticket_with_valid_token(client_with_temp_db, temp_db):
     """Test POST /tickets with valid token creates ticket with correct user_id."""
     from app.api.auth import create_access_token
     
-    client = client_with_temp_db
+    client, _ = client_with_temp_db
     
     # Create a test user in the same database
     engine = create_engine(f"sqlite:///{temp_db}")
@@ -133,7 +136,7 @@ def test_list_tickets_user_token_filters_by_user(client_with_temp_db, temp_db):
     """Test GET /tickets with user token only returns that user's tickets."""
     from app.api.auth import create_access_token
     
-    client = client_with_temp_db
+    client, _ = client_with_temp_db
     
     # Create two test users in the same database
     engine = create_engine(f"sqlite:///{temp_db}")
@@ -189,7 +192,7 @@ def test_list_tickets_admin_token_returns_all_tickets(client_with_temp_db, temp_
     """Test GET /tickets with admin token returns all tickets."""
     from app.api.auth import create_access_token
     
-    client = client_with_temp_db
+    client, _ = client_with_temp_db
     
     # Create users in the same database
     engine = create_engine(f"sqlite:///{temp_db}")
@@ -239,26 +242,20 @@ def test_list_tickets_admin_token_returns_all_tickets(client_with_temp_db, temp_
     assert len(tickets_data["tickets"]) == 3  # All tickets returned
 
 
-def test_list_tickets_agent_token_returns_all_tickets(client_with_temp_db):
+def test_list_tickets_agent_token_returns_all_tickets(client_with_temp_db, temp_db):
     """Test GET /tickets with agent token returns all tickets."""
     from app.api.auth import create_access_token
-    from app.models.user import User
     
-    client = client_with_temp_db
+    client, db = client_with_temp_db
     
-    # Create users
-    engine = create_engine("sqlite:///./test_tickets.db")
-    TestingSessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
-    Base.metadata.create_all(bind=engine)
-    db = TestingSessionLocal()
-    
+    # Create users in the same database (use the shared session)
     agent_user = User(
-        email="agent@example.com",
+        email="agent2@example.com",
         hashed_password="hashed_password",
         role="agent"
     )
     regular_user = User(
-        email="user@example.com",
+        email="user2@example.com",
         hashed_password="hashed_password",
         role="user"
     )
@@ -268,17 +265,20 @@ def test_list_tickets_agent_token_returns_all_tickets(client_with_temp_db):
     db.refresh(agent_user)
     db.refresh(regular_user)
     
-    # Create tickets
-    ticket1 = Ticket(message="User ticket", user_id=regular_user.id)
-    ticket2 = Ticket(message="Agent ticket", user_id=agent_user.id)
+    # Store user IDs
+    agent_user_id = agent_user.id
+    regular_user_id = regular_user.id
+    
+    # Create tickets (use the shared session)
+    ticket1 = Ticket(message="User ticket", user_id=regular_user_id)
+    ticket2 = Ticket(message="Agent ticket", user_id=agent_user_id)
     
     db.add(ticket1)
     db.add(ticket2)
     db.commit()
-    db.close()
     
     # Create token for agent
-    token = create_access_token(data={"sub": str(agent_user.id), "role": "agent"})
+    token = create_access_token(data={"sub": str(agent_user_id), "role": "agent"})
     
     # Get tickets with agent token
     headers = {"Authorization": f"Bearer {token}"}
@@ -289,23 +289,17 @@ def test_list_tickets_agent_token_returns_all_tickets(client_with_temp_db):
     assert len(tickets_data["tickets"]) == 2  # All tickets returned
 
 
-def test_list_tickets_without_token_returns_all_tickets(client_with_temp_db):
+def test_list_tickets_without_token_returns_all_tickets(client_with_temp_db, temp_db):
     """Test GET /tickets without token returns all tickets (unauthenticated access)."""
-    client = client_with_temp_db
+    client, db = client_with_temp_db
     
-    # Create tickets directly in database
-    engine = create_engine("sqlite:///./test_tickets.db")
-    TestingSessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
-    Base.metadata.create_all(bind=engine)
-    db = TestingSessionLocal()
-    
+    # Create tickets directly in database (use the shared session)
     ticket1 = Ticket(message="Ticket 1", user_id=1)
     ticket2 = Ticket(message="Ticket 2", user_id=None)
     
     db.add(ticket1)
     db.add(ticket2)
     db.commit()
-    db.close()
     
     # Get tickets without authentication
     response = client.get("/tickets/")

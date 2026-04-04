@@ -209,14 +209,20 @@ def decode_token(token: str) -> dict:
 
     Reference: Technical Spec § 10.1 (Authentication)
     """
-    payload = jwt.decode(
-        token,
-        settings.SECRET_KEY,
-        algorithms=[settings.ALGORITHM],
-    )
-    
-    # Explicit expiration check for additional security
-    exp = payload.get("exp")
+    try:
+        payload = jwt.decode(
+            token,
+            settings.SECRET_KEY,
+            algorithms=[settings.ALGORITHM],
+        )
+        
+        # Explicit expiration check for additional security
+        exp = payload.get("exp")
+        return payload
+        
+    except (JWTError, ValueError, UnicodeDecodeError) as e:
+        # Re-raise JWT errors to ensure proper handling upstream
+        raise JWTError(f"Invalid token: {str(e)}")
     if exp is None:
         raise JWTError("Token missing expiration claim")
     

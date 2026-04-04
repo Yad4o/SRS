@@ -177,8 +177,12 @@ def create_ticket(
             try:
                 payload = decode_token(token)
                 user_id = int(payload.get("sub") or 0) or None
-            except Exception:
-                pass
+            except Exception as e:
+                logger.error(f"Invalid token provided: {e}")
+                raise HTTPException(
+                    status_code=status.HTTP_401_UNAUTHORIZED,
+                    detail="Invalid or expired authentication token"
+                )
 
         # Step 1: Create ticket with initial status
         ticket = Ticket(
@@ -255,8 +259,12 @@ def list_tickets(
                 payload = decode_token(token)
                 user_id = int(payload.get("sub") or 0) or None
                 user_role = payload.get("role")
-            except Exception:
-                pass
+            except Exception as e:
+                logger.error(f"Invalid token provided: {e}")
+                raise HTTPException(
+                    status_code=status.HTTP_401_UNAUTHORIZED,
+                    detail="Invalid or expired authentication token"
+                )
 
         # Build query
         query = db.query(Ticket)
