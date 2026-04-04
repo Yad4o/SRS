@@ -24,6 +24,7 @@ DO NOT:
 
 from typing import List, Optional
 from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi.security import OAuth2PasswordBearer
 from sqlalchemy.orm import Session
 import logging
 
@@ -40,9 +41,13 @@ from app.core.config import settings
 from fastapi import status
 from app.services.similarity_search import find_similar_ticket
 from app.services.decision_engine import decide_resolution
+from app.api.auth import decode_token
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/tickets", tags=["Tickets"])
+
+# Optional OAuth2 scheme for user identification (token is optional)
+oauth2_scheme_optional = OAuth2PasswordBearer(tokenUrl="auth/login", auto_error=False)
 
 # ---------------------------------------------------------------------------
 # Internal automation helper
@@ -138,6 +143,7 @@ def _run_ticket_automation(ticket: Ticket, db: Session) -> Ticket:
 def create_ticket(
     ticket_data: TicketCreate,
     db: Session = Depends(get_db),
+    token: Optional[str] = Depends(oauth2_scheme_optional),
 ) -> TicketResponse:
     """
     Create a new support ticket with AI automation.
@@ -165,10 +171,20 @@ def create_ticket(
         HTTPException: If database operation fails
     """
     try:
+        # Extract user_id from optional token
+        user_id = None
+        if token:
+            try:
+                payload = decode_token(token)
+                user_id = int(payload.get("sub") or 0) or None
+            except Exception:
+                pass
+
         # Step 1: Create ticket with initial status
         ticket = Ticket(
             message=ticket_data.message,
-            status="open"
+            status="open",
+            user_id=user_id
         )
         
         # Save to database to get ID
@@ -215,6 +231,7 @@ def list_tickets(
         alias="status"
     ),
     db: Session = Depends(get_db),
+    token: Optional[str] = Depends(oauth2_scheme_optional),
 ) -> TicketList:
     """
     List all tickets with optional status filtering.
@@ -230,12 +247,27 @@ def list_tickets(
         HTTPException: If database operation fails
     """
     try:
+        # Extract user_id and role from optional token
+        user_id = None
+        user_role = None
+        if token:
+            try:
+                payload = decode_token(token)
+                user_id = int(payload.get("sub") or 0) or None
+                user_role = payload.get("role")
+            except Exception:
+                pass
+
         # Build query
         query = db.query(Ticket)
         
         # Apply status filter if provided
         if ticket_status:
             query = query.filter(Ticket.status == ticket_status)
+        
+        # Apply user filter for non-admin/agent users
+        if user_id and user_role not in ["admin", "agent"]:
+            query = query.filter(Ticket.user_id == user_id)
         
         # Execute query (order by creation date, newest first)
         tickets = query.order_by(Ticket.created_at.desc()).all()

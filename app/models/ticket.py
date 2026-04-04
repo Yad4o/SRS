@@ -23,7 +23,7 @@ DO NOT:
 """
 
 from datetime import datetime, timezone
-from sqlalchemy import Boolean, Column, Integer, String, Float, DateTime
+from sqlalchemy import Boolean, Column, Integer, String, Float, DateTime, ForeignKey
 from sqlalchemy.orm import relationship
 
 from app.db.session import Base
@@ -112,6 +112,13 @@ class Ticket(Base):
         doc="Normalized quality score from feedback (0.0-1.0). None if no feedback yet.",
     )
 
+    user_id = Column(
+        Integer,
+        ForeignKey('users.id'),
+        nullable=True,
+        doc="ID of the submitting user. Null for unauthenticated submissions.",
+    )
+
     created_at = Column(
         DateTime,
         default=lambda: datetime.now(timezone.utc),
@@ -129,3 +136,5 @@ class Ticket(Base):
         uselist=False,
         doc="Feedback record for this ticket (one-to-one)",
     )
+
+    user = relationship("User", foreign_keys=[user_id])
