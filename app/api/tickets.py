@@ -417,11 +417,46 @@ def assign_ticket(
                 detail="Only escalated tickets can be assigned"
             )
         
-        # Assign ticket to current user
-        ticket.assigned_agent_id = current_user.id
+        # Guard against reassignment - check if already assigned to another agent
+        if ticket.assigned_agent_id is not None and ticket.assigned_agent_id != current_user.id:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail=f"Ticket already assigned to agent {ticket.assigned_agent_id}"
+            )
+        
+        # Atomic conditional update for concurrent safety
+        from sqlalchemy import update
+        result = db.execute(
+            update(Ticket)
+            .where(
+                Ticket.id == ticket_id,
+                Ticket.assigned_agent_id.is_(None)  # Only update if unassigned
+            )
+            .values(assigned_agent_id=current_user.id)
+        )
+        
+        if result.rowcount == 0:
+            # Another thread assigned it - check who got it
+            db.rollback()
+            ticket = db.query(Ticket).filter(Ticket.id == ticket_id).first()
+            if ticket and ticket.assigned_agent_id == current_user.id:
+                # We actually got it (rare race where we assigned it)
+                pass
+            elif ticket and ticket.assigned_agent_id is not None:
+                raise HTTPException(
+                    status_code=status.HTTP_409_CONFLICT,
+                    detail=f"Ticket already assigned to agent {ticket.assigned_agent_id}"
+                )
+            else:
+                raise HTTPException(
+                    status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                    detail="Failed to assign ticket due to concurrent update"
+                )
         
         db.commit()
-        db.refresh(ticket)
+        
+        # Refresh ticket to get updated state
+        ticket = db.query(Ticket).filter(Ticket.id == ticket_id).first()
         
         logger.info(f"Ticket {ticket_id} assigned to user {current_user.id}")
         return TicketResponse.model_validate(ticket)
