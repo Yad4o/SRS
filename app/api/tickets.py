@@ -409,26 +409,29 @@ def assign_ticket(
                 detail=f"Ticket already assigned to agent {ticket.assigned_agent_id}"
             )
         
-        # Atomic conditional update for concurrent safety
+        # Atomic conditional update for concurrent safety - also guards against concurrent status change
         result = db.execute(
             update(Ticket)
             .where(
                 Ticket.id == ticket_id,
-                Ticket.assigned_agent_id.is_(None)  # Only update if unassigned
+                Ticket.assigned_agent_id.is_(None),  # Only update if unassigned
+                Ticket.status == "escalated"  # Guard against concurrent status change
             )
             .values(assigned_agent_id=current_user.id)
         )
         
         if result.rowcount == 0:
-            # Another thread assigned it - check who got it (no rollback needed)
+            # Check why update failed - refresh to see current state
             db.refresh(ticket)
-            if ticket.assigned_agent_id == current_user.id:
-                # We actually got it (rare race where we assigned it)
-                pass
-            elif ticket.assigned_agent_id is not None:
+            if ticket.assigned_agent_id is not None:
                 raise HTTPException(
                     status_code=status.HTTP_409_CONFLICT,
                     detail=f"Ticket already assigned to agent {ticket.assigned_agent_id}"
+                )
+            elif ticket.status != "escalated":
+                raise HTTPException(
+                    status_code=status.HTTP_409_CONFLICT,
+                    detail=f"Ticket status changed to '{ticket.status}', cannot assign"
                 )
             else:
                 raise HTTPException(
@@ -492,10 +495,31 @@ def close_ticket(
                 detail="Only escalated or auto_resolved tickets can be closed"
             )
         
-        # Close the ticket
-        ticket.status = "closed"
+        # Atomic conditional update to close ticket - guards against concurrent status change
+        result = db.execute(
+            update(Ticket)
+            .where(
+                Ticket.id == ticket_id,
+                Ticket.status.in_(["escalated", "auto_resolved"])  # Guard against concurrent status change
+            )
+            .values(status="closed")
+        )
+        
+        if result.rowcount == 0:
+            # Another thread changed status - check current state
+            db.refresh(ticket)
+            if ticket.status == "closed":
+                # Already closed, idempotent success
+                return TicketResponse.model_validate(ticket)
+            else:
+                raise HTTPException(
+                    status_code=status.HTTP_409_CONFLICT,
+                    detail=f"Ticket status changed to '{ticket.status}', cannot close"
+                )
         
         db.commit()
+        
+        # Refresh ticket to get updated state
         db.refresh(ticket)
         
         logger.info(f"Ticket {ticket_id} closed by user {current_user.id}")
