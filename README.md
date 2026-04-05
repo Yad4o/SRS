@@ -12,6 +12,7 @@ An enterprise-grade backend system that automatically classifies, resolves, and 
 - [✨ Key Features](#-key-features)
 - [🏗️ System Architecture](#️-system-architecture)
 - [🛠️ Technology Stack](#️-technology-stack)
+- [⚙️ Background Workers](#️-background-workers)
 - [📁 Project Structure](#-project-structure)
 - [🔄 Ticket Lifecycle](#-ticket-lifecycle)
 - [🧠 AI Pipeline](#-ai-pipeline)
@@ -19,8 +20,7 @@ An enterprise-grade backend system that automatically classifies, resolves, and 
 - [📊 API Documentation](#-api-documentation)
 - [🚀 Getting Started](#-getting-started)
 - [🧪 Testing](#-testing)
-- [📈 Performance & Scalability](#-performance--scalability)
-- [🔮 Future Enhancements](#-future-enhancements)
+- [🗃️ Database Migrations (Alembic)](#️-database-migrations-alembic)
 - [👥 Development Team](#-development-team)
 - [📜 License](#-license)
 
@@ -106,7 +106,7 @@ Customer support teams face overwhelming volumes of repetitive issues—login pr
 ┌─────────────────▼───────────────────────┐
 │            Database Layer               │
 │  • SQLite (Development)                 │
-│  • PostgreSQL (Production)              │
+│  • PostgreSQL / Neon (Production)       │
 └─────────────────────────────────────────┘
 ```
 
@@ -117,69 +117,6 @@ Customer support teams face overwhelming volumes of repetitive issues—login pr
 - **AI Logic Isolation**: Business logic separate from HTTP handling
 - **Safe Automation**: Conservative decision making with human fallback
 - **Testability**: Every component designed for comprehensive testing
-
-## 🏗️ System Workflow
-
-```
-User submits ticket
-        │
-        ▼
-──────────────────────────
-Intent Classification
-- Detect intent
-- Compute confidence
-──────────────────────────
-        │
-        ▼
-──────────────────────────
-Decision Engine
-confidence ≥ 0.75 ?
-──────────────────────────
-        │
- ┌──────┴───────────────┐
- │ YES                  │ NO
- ▼                      ▼
-AUTO_RESOLVE            ESCALATE
- │                      │
- │                      ▼
- │            Fixed system message
- │            ("Forwarded to agent")
- │                      │
- │                      ▼
- │                END (Human takes over)
- │
- ▼
-──────────────────────────
-Similarity Search
-Resolved tickets exist
-AND similarity ≥ threshold?
-──────────────────────────
-        │
- ┌──────┴───────────────┐
- │ YES                  │ NO
- ▼                      ▼
-Reuse response           Intent templates available?
-from database            (8–10 per intent)
- │                      │
- ▼                      ▼
-Send reused              ┌──────────────┐
-response                 │ YES          │ NO
- │                       ▼              ▼
- ▼                 Select template   OpenAI enabled?
- END                     response         │
-                                          │
-                                   ┌──────┴──────────┐
-                                   │ YES              │ NO
-                                   ▼                  ▼
-                              OpenAI generates   Escalate to
-                              response wording   human agent
-                                   │
-                                   ▼
-                              Send response
-                                   │
-                                   ▼
-                                  END
-```
 
 ---
 
@@ -194,7 +131,7 @@ response                 │ YES          │ NO
 ### 🗄️ Database & ORM
 - **SQLAlchemy**: Powerful ORM with relationship management
 - **SQLite**: Lightweight database for development
-- **PostgreSQL**: Enterprise-grade database for production
+- **PostgreSQL / Neon**: Enterprise-grade database for production
 - **Alembic**: Database migration management
 
 ### 🧠 AI & NLP Stack
@@ -217,6 +154,19 @@ response                 │ YES          │ NO
 
 ---
 
+## ⚙️ Background Workers
+
+| Worker | Purpose | Command |
+|--------|---------|---------|
+| `cleanup.py` | Archive old tickets, remove orphaned feedback | `python workers/cleanup.py --days 90` |
+| `embedding_builder.py` | Precompute TF-IDF vectors for similarity speedup | `python workers/embedding_builder.py` |
+| `feedback_analyzer.py` | Aggregate feedback + quality scores per intent | `python workers/feedback_analyzer.py` |
+| `metrics_collector.py` | System-wide stats snapshot | `python workers/metrics_collector.py` |
+
+Add `--dry-run` to `cleanup.py` to preview changes without applying them.
+
+---
+
 ## 📁 Project Structure
 
 ```
@@ -225,6 +175,7 @@ SRS/
 ├── 📄 requirements.txt                     # Python dependencies
 ├── 📄 .env.example                        # Environment variables template
 ├── 📄 .gitignore                          # Git ignore patterns
+├── 📄 alembic.ini                         # Alembic configuration
 │
 ├── 📁 app/                                # Main application code
 │   ├── 📄 main.py                         # FastAPI application entry point
@@ -264,9 +215,17 @@ SRS/
 │   └── 📁 conftest.py                     # Pytest configuration and fixtures
 │
 ├── 📁 workers/                            # Background job processing
+│   ├── 📄 cleanup.py
+│   ├── 📄 embedding_builder.py
+│   ├── 📄 feedback_analyzer.py
+│   └── 📄 metrics_collector.py
+│
+├── 📁 migrations/                         # Manual migration scripts
+├── 📁 alembic/                            # Alembic auto-migrations (Phase 5+)
+│
 ├── 📁 docs/                               # Documentation and specifications
 │   ├── 📁 specification/                  # Technical specifications
-│   └── 📁 tasks/                           # Development phases and tasks
+│   └── 📁 tasks/                          # Development phases and tasks
 │
 └── 📁 scripts/                            # Deployment and utility scripts
 ```
@@ -348,7 +307,8 @@ SRS/
 ```json
 {
   "intent": "login_issue",
-  "confidence": 0.82
+  "confidence": 0.92,
+  "sub_intent": "password_reset"
 }
 ```
 
@@ -360,6 +320,19 @@ SRS/
 - `feature_request`: New functionality requests
 - `general_query`: General information requests
 - `unknown`: Unclear or ambiguous requests
+
+### 🏷️ Sub-Intent Classification
+
+Each intent is further classified into a sub-intent that routes to a specific response template:
+
+| Intent | Sub-intents |
+|--------|-------------|
+| login_issue | password_reset, account_locked, wrong_credentials |
+| payment_issue | duplicate_charge, payment_declined, billing_question |
+| account_issue | delete_account, update_info |
+| technical_issue | crash_error, performance |
+| feature_request | new_feature, improvement |
+| general_query | how_to, pricing_plan |
 
 ### 🔍 Similarity Search
 
@@ -383,10 +356,10 @@ SRS/
 ### 💬 Response Generation
 
 **Priority Order**:
-1. **Reuse Similar Solution** (Highest priority)
-2. **Intent-Based Templates** (Safe, deterministic)
-3. **AI-Generated Responses** (Future enhancement)
-4. **Fallback Response** (Safe default)
+1. **Reuse similar solution** if `quality_score ≥ 0.6` (source: `"similarity"`)
+2. **OpenAI gpt-4o-mini** if key present (source: `"openai"`)
+3. **Intent + sub-intent specific template** (source: `"template"`)
+4. **Generic fallback** (source: `"fallback"`)
 
 **Example Response**:
 ```
@@ -436,7 +409,7 @@ def decide_resolution(confidence: float) -> str:
 | Role | Permissions | Use Case |
 |------|-------------|----------|
 | **user** | Create tickets, submit feedback | End customers |
-| **agent** | + View assigned tickets | Support agents |
+| **agent** | + Assign escalated tickets to self, close tickets | Support agents |
 | **admin** | + System metrics, all tickets | System administrators |
 
 ### 🛡️ AI Safety Controls
@@ -464,7 +437,18 @@ def decide_resolution(confidence: float) -> str:
 | `POST` | `/tickets` | Create new support ticket | ✅ |
 | `GET` | `/tickets` | List user tickets | ✅ |
 | `GET` | `/tickets/{id}` | Get ticket details | ✅ |
-| `POST` | `/tickets/{id}/resolve` | Trigger automated resolution | ✅ |
+| `POST` | `/tickets/{id}/assign` | Assign escalated ticket to self | Agent/Admin |
+| `POST` | `/tickets/{id}/close` | Close a ticket | Agent/Admin |
+
+### 👷 Worker Endpoints (non-production only)
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| `GET` | `/demo/analytics` | Live system analytics |
+| `GET` | `/demo/tickets` | All tickets data |
+| `GET` | `/demo/users` | All users data |
+
+These routes are only mounted when `ENV != production`.
 
 ### ⭐ Feedback Endpoints
 
@@ -494,9 +478,14 @@ Response:
   "id": 123,
   "message": "I can't login to my account",
   "intent": "login_issue",
-  "confidence": 0.82,
+  "sub_intent": "password_reset",
+  "confidence": 0.92,
   "status": "auto_resolved",
   "response": "Please try resetting your password...",
+  "response_source": "similarity",
+  "quality_score": null,
+  "user_id": 1,
+  "assigned_agent_id": null,
   "created_at": "2024-01-15T10:30:00Z"
 }
 ```
@@ -519,6 +508,17 @@ Response:
 ---
 
 ## 🚀 Getting Started
+
+### 🔑 Key Environment Variables
+
+| Variable | Required | Default | Description |
+|----------|----------|---------|-------------|
+| `SECRET_KEY` | ✅ | — | JWT signing key (min 32 chars) |
+| `DATABASE_URL` | ✅ | — | SQLite or PostgreSQL connection string |
+| `OPENAI_API_KEY` | ❌ | None | Enables OpenAI response generation |
+| `REDIS_URL` | ❌ | None | Enables similarity search caching |
+| `CONFIDENCE_THRESHOLD_AUTO_RESOLVE` | ❌ | 0.75 | Min confidence to auto-resolve |
+| `RATE_LIMIT_PER_MINUTE` | ❌ | 60 | POST /tickets rate limit per IP |
 
 ### 📋 Prerequisites
 
@@ -564,8 +564,8 @@ cp .env.example .env
 
 #### 5️⃣ Initialize Database
 ```bash
-# Create database tables
-python -c "from app.db.session import engine; from app.models import user, ticket, feedback; user.Base.metadata.create_all(bind=engine); ticket.Base.metadata.create_all(bind=engine); feedback.Base.metadata.create_all(bind=engine)"
+uvicorn app.main:app --reload
+# Tables are auto-created on first startup via init_db()
 ```
 
 #### 6️⃣ Start the Server
@@ -648,65 +648,23 @@ pytest tests/integration/
 
 ---
 
-## 📈 Performance & Scalability
+## 🗃️ Database Migrations (Alembic)
 
-### ⚡ Current Performance
+```bash
+# Apply all migrations (first time or after pulling new changes)
+alembic upgrade head
 
-- **Response Time**: < 200ms for ticket creation
-- **AI Processing**: < 100ms for classification and similarity
-- **Concurrent Users**: 1000+ with proper scaling
-- **Database**: Optimized queries with proper indexing
+# Create a new migration after changing a model
+alembic revision --autogenerate -m "description"
 
-### 🚀 Scalability Roadmap
+# Check current migration state
+alembic current
+```
 
-#### 🏗️ Short-Term Improvements
-- **PostgreSQL Migration**: Production-ready database
-- **Connection Pooling**: Efficient database connections
-- **Caching Layer**: Redis for frequently accessed data
-- **Background Workers**: Async processing for heavy tasks
-
-#### 🌐 Long-Term Architecture
-- **Microservices**: Distributed service architecture
-- **Vector Databases**: FAISS/Pinecone for similarity search
-- **Load Balancing**: Multiple API server instances
-- **Message Queues**: RabbitMQ/Kafka for async processing
-
-### 📊 Monitoring & Metrics
-
-- **Response Times**: API endpoint performance tracking
-- **AI Confidence**: Classification accuracy monitoring
-- **Escalation Rates**: Human intervention metrics
-- **System Health**: Resource usage and error rates
+For production, switch to Neon PostgreSQL: set `DATABASE_URL=postgresql://...` in `.env` and run `alembic upgrade head`.
 
 ---
 
-## 🔮 Future Enhancements
-
-### 🧠 AI & Machine Learning
-- **Advanced NLP**: Integration with spaCy or OpenAI GPT
-- **Continuous Learning**: Model improvement from feedback
-- **Multi-language Support**: International language capabilities
-- **Voice Processing**: Speech-to-text for voice tickets
-
-### 🔧 System Features
-- **Real-time Notifications**: WebSocket-based updates
-- **Ticket Assignment**: Intelligent agent routing
-- **SLA Management**: Service level agreement tracking
-- **Knowledge Base**: Integrated documentation system
-
-### 📊 Analytics & Insights
-- **Predictive Analytics**: Trend forecasting and insights
-- **Customer Satisfaction**: NPS and sentiment analysis
-- **Performance Dashboards**: Real-time monitoring
-- **Custom Reports**: Business intelligence integration
-
-### 🌐 Integration & Ecosystem
-- **Third-party APIs**: CRM and helpdesk integration
-- **Webhook Support**: Event-driven architecture
-- **API Rate Limiting**: Fair usage policies
-- **Multi-tenant Support**: SaaS deployment capabilities
-
----
 ## 👥 Development Team
 
 ### 🎯 Core Contributors
@@ -715,6 +673,7 @@ pytest tests/integration/
 |------|------|-----------|------------------|
 | **Om Yadav** | **AI/ML & Backend Engineer** | Machine Learning, System Design, APIs, Security | Model Integration, Backend Architecture, Authentication, Database Design, Documentation |
 | **Prajwal** | **AI/ML & Backend Engineer** | NLP, Machine Learning, Decision Systems, APIs | Intent Classification, Similarity Search, Model Development, Backend Logic, API Integration |
+
 ### 🤝 Collaboration Model
 
 - **Clean Architecture**: Modular design for parallel development
