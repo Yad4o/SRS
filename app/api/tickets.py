@@ -43,7 +43,8 @@ from app.core.config import settings
 from fastapi import status
 from app.services.similarity_search import find_similar_ticket
 from app.services.decision_engine import decide_resolution
-from app.api.auth import decode_token, get_current_user, require_agent_or_admin
+from app.api.auth import decode_token, get_current_user
+from app.api.dependencies import require_agent_or_admin
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/tickets", tags=["Tickets"])
@@ -381,35 +382,7 @@ def assign_ticket(
         HTTPException: 404 if ticket not found, 400 if not escalated, 403 if not agent/admin
     """
     try:
-        # Fetch ticket by ID
-        ticket = db.query(Ticket).filter(Ticket.id == ticket_id).first()
-        
-        if not ticket:
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail=f"Ticket with ID {ticket_id} not found"
-            )
-        
-        # Only escalated tickets can be assigned
-        if ticket.status != "escalated":
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Only escalated tickets can be assigned"
-            )
-        
-        # Idempotent check - already assigned to current user is a no-op
-        if ticket.assigned_agent_id == current_user.id:
-            logger.info(f"Ticket {ticket_id} already assigned to user {current_user.id}")
-            return TicketResponse.model_validate(ticket)
-        
-        # Guard against reassignment - check if already assigned to another agent
-        if ticket.assigned_agent_id is not None:
-            raise HTTPException(
-                status_code=status.HTTP_409_CONFLICT,
-                detail=f"Ticket already assigned to agent {ticket.assigned_agent_id}"
-            )
-        
-        # Atomic conditional update for concurrent safety - also guards against concurrent status change
+        # Atomic UPDATE is the ONLY gate - no pre-fetch to avoid TOCTOU race
         result = db.execute(
             update(Ticket)
             .where(
@@ -419,10 +392,34 @@ def assign_ticket(
             )
             .values(assigned_agent_id=current_user.id)
         )
+        db.commit()
+        
+        # Re-query to get current state (for 404 check and response)
+        ticket = db.query(Ticket).filter(Ticket.id == ticket_id).first()
+        
+        if not ticket:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"Ticket with ID {ticket_id} not found"
+            )
         
         if result.rowcount == 0:
-            # Check why update failed - refresh to see current state
-            db.refresh(ticket)
+            # Atomic update failed - rollback and diagnose
+            db.rollback()
+            
+            # Re-query fresh data after rollback
+            ticket = db.query(Ticket).filter(Ticket.id == ticket_id).first()
+            
+            if not ticket:
+                raise HTTPException(
+                    status_code=status.HTTP_404_NOT_FOUND,
+                    detail=f"Ticket with ID {ticket_id} not found"
+                )
+            
+            # Check if already assigned to current user (idempotent)
+            if ticket.assigned_agent_id == current_user.id:
+                return TicketResponse.model_validate(ticket)
+            
             if ticket.assigned_agent_id is not None:
                 raise HTTPException(
                     status_code=status.HTTP_409_CONFLICT,
@@ -439,11 +436,7 @@ def assign_ticket(
                     detail="Failed to assign ticket due to concurrent update"
                 )
         
-        db.commit()
-        
-        # Refresh ticket to get updated state
         db.refresh(ticket)
-        
         logger.info(f"Ticket {ticket_id} assigned to user {current_user.id}")
         return TicketResponse.model_validate(ticket)
         
@@ -479,23 +472,7 @@ def close_ticket(
         HTTPException: 404 if ticket not found, 400 if status not allowed, 403 if not agent/admin
     """
     try:
-        # Fetch ticket by ID
-        ticket = db.query(Ticket).filter(Ticket.id == ticket_id).first()
-        
-        if not ticket:
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail=f"Ticket with ID {ticket_id} not found"
-            )
-        
-        # Only escalated or auto_resolved tickets can be closed
-        if ticket.status not in ("escalated", "auto_resolved"):
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Only escalated or auto_resolved tickets can be closed"
-            )
-        
-        # Atomic conditional update to close ticket - guards against concurrent status change
+        # Atomic UPDATE is the ONLY gate - no pre-fetch to avoid TOCTOU race
         result = db.execute(
             update(Ticket)
             .where(
@@ -504,10 +481,30 @@ def close_ticket(
             )
             .values(status="closed")
         )
+        db.commit()
+        
+        # Re-query to get current state (for 404 check and response)
+        ticket = db.query(Ticket).filter(Ticket.id == ticket_id).first()
+        
+        if not ticket:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"Ticket with ID {ticket_id} not found"
+            )
         
         if result.rowcount == 0:
-            # Another thread changed status - check current state
-            db.refresh(ticket)
+            # Atomic update failed - rollback and diagnose
+            db.rollback()
+            
+            # Re-query fresh data after rollback
+            ticket = db.query(Ticket).filter(Ticket.id == ticket_id).first()
+            
+            if not ticket:
+                raise HTTPException(
+                    status_code=status.HTTP_404_NOT_FOUND,
+                    detail=f"Ticket with ID {ticket_id} not found"
+                )
+            
             if ticket.status == "closed":
                 # Already closed, idempotent success
                 return TicketResponse.model_validate(ticket)
@@ -517,11 +514,7 @@ def close_ticket(
                     detail=f"Ticket status changed to '{ticket.status}', cannot close"
                 )
         
-        db.commit()
-        
-        # Refresh ticket to get updated state
         db.refresh(ticket)
-        
         logger.info(f"Ticket {ticket_id} closed by user {current_user.id}")
         return TicketResponse.model_validate(ticket)
         

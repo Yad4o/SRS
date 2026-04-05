@@ -335,27 +335,6 @@ def get_current_user(
         )
 
 
-def require_agent_or_admin(current_user: User = Depends(get_current_user)) -> User:
-    """
-    Dependency to ensure current user has agent or admin role.
-    
-    Args:
-        current_user: Current authenticated user from JWT token
-        
-    Returns:
-        Current user if agent or admin
-        
-    Raises:
-        HTTPException: 403 if user is not agent or admin
-    """
-    if current_user.role not in ["agent", "admin"]:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Access denied. Agent or admin role required."
-        )
-    return current_user
-
-
 @router.get("/me", response_model=UserResponse)
 def get_current_user_info(
     current_user: Annotated[User, Depends(get_current_user)]

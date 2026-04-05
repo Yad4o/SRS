@@ -28,7 +28,7 @@ def temp_db():
 
 @pytest.fixture(scope="function")
 def client_with_temp_db(temp_db):
-    """Create test client with temporary database."""
+    """Create test client with temporary database using shared session."""
     engine = create_engine(
         f"sqlite:///{temp_db}",
         connect_args={"check_same_thread": False}
@@ -36,26 +36,26 @@ def client_with_temp_db(temp_db):
     TestingSessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
     Base.metadata.create_all(bind=engine)
     
-    db = TestingSessionLocal()
+    # Single shared session for both test and requests
+    shared_db = TestingSessionLocal()
     original_override = app.dependency_overrides.get(get_db)
     
     def override_get_db():
-        request_db = TestingSessionLocal()
         try:
-            yield request_db
+            yield shared_db
         finally:
-            request_db.close()
+            pass  # Don't close here - test manages lifecycle
     
     app.dependency_overrides[get_db] = override_get_db
     client = TestClient(app)
     try:
-        yield client, db
+        yield client, shared_db
     finally:
         if original_override is not None:
             app.dependency_overrides[get_db] = original_override
         else:
             app.dependency_overrides.pop(get_db, None)
-        db.close()
+        shared_db.close()
         engine.dispose()
 
 
@@ -127,8 +127,8 @@ def test_regular_user_gets_403_when_assigning_ticket(client_with_temp_db):
     assert "Access denied" in response.json()["error"]["message"]
 
 
-def test_assign_auto_resolved_ticket_returns_400(client_with_temp_db):
-    """Test that trying to assign an auto_resolved ticket returns 400."""
+def test_assign_auto_resolved_ticket_returns_409(client_with_temp_db):
+    """Test that trying to assign an auto_resolved ticket returns 409 (conflict)."""
     from app.api.auth import create_access_token
     
     client, db = client_with_temp_db
@@ -159,8 +159,8 @@ def test_assign_auto_resolved_ticket_returns_400(client_with_temp_db):
     headers = {"Authorization": f"Bearer {token}"}
     response = client.post(f"/tickets/{ticket.id}/assign", headers=headers)
     
-    assert response.status_code == 400
-    assert "Only escalated tickets can be assigned" in response.json()["error"]["message"]
+    assert response.status_code == 409
+    assert "cannot assign" in response.json()["error"]["message"]
 
 
 def test_agent_can_close_escalated_ticket(client_with_temp_db):
