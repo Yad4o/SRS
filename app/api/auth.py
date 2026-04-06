@@ -150,14 +150,16 @@ def create_user(db: Session, user_create: UserCreate) -> UserResponse:
             logger.info("Password will be truncated to fit bcrypt limit")
         
         hashed_password = hash_password(user_create.password)
-        default_role = getattr(settings, 'DEFAULT_USER_ROLE', 'user')
+        
+        # Use role from user_create, fallback to default if not provided
+        user_role = getattr(user_create, 'role', None) or getattr(settings, 'DEFAULT_USER_ROLE', 'user')
         
         # Validate role against allowed roles
-        if default_role not in ALLOWED_ROLES:
-            logger.error(f"Invalid default role configured: {default_role}")
+        if user_role not in ALLOWED_ROLES:
+            logger.error(f"Invalid role specified: {user_role}")
             raise HTTPException(
-                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                detail=AUTH_SERVICE_UNAVAILABLE
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Invalid role. Must be one of: {', '.join(ALLOWED_ROLES)}"
             )
         
         # Normalize email to lowercase for consistent storage and uniqueness
@@ -166,7 +168,7 @@ def create_user(db: Session, user_create: UserCreate) -> UserResponse:
         db_user = User(
             email=normalized_email,
             hashed_password=hashed_password,
-            role=default_role
+            role=user_role
         )
         
         db.add(db_user)
