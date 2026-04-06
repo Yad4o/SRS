@@ -21,7 +21,7 @@ if config.config_file_name is not None:
 
 # add your model's MetaData object here
 # for 'autogenerate' support
-target_metadata = None  # Will be set inside functions below
+# target_metadata = Base.metadata  <-- Handled inside functions instead
 
 
 def run_migrations_offline() -> None:
@@ -42,9 +42,6 @@ def run_migrations_offline() -> None:
     from app.db.session import Base
     from app.models import user, ticket, feedback  # noqa: F401
     
-    global target_metadata
-    target_metadata = Base.metadata
-
     # Prefer application DB URL over static alembic.ini value
     db_url = settings.DATABASE_URL or config.get_main_option("sqlalchemy.url")
     if not db_url:
@@ -52,7 +49,7 @@ def run_migrations_offline() -> None:
         
     context.configure(
         url=db_url,
-        target_metadata=target_metadata,
+        target_metadata=Base.metadata,
         literal_binds=True,
         dialect_opts={"paramstyle": "named"},
     )
@@ -73,9 +70,6 @@ def run_migrations_online() -> None:
     from app.db.session import Base
     from app.models import user, ticket, feedback  # noqa: F401
     
-    global target_metadata
-    target_metadata = Base.metadata
-
     # Prefer application DB URL over static alembic.ini value
     configuration = config.get_section(config.config_ini_section) or {}
     db_url = settings.DATABASE_URL or config.get_main_option("sqlalchemy.url")
@@ -91,7 +85,7 @@ def run_migrations_online() -> None:
 
     with connectable.connect() as connection:
         context.configure(
-            connection=connection, target_metadata=target_metadata
+            connection=connection, target_metadata=Base.metadata
         )
 
         with context.begin_transaction():
