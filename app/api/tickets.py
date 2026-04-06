@@ -43,7 +43,8 @@ from app.core.config import settings
 from fastapi import status
 from app.services.similarity_search import find_similar_ticket
 from app.services.decision_engine import decide_resolution
-from app.api.auth import decode_token, get_current_user, require_agent_or_admin
+from app.api.auth import decode_token, get_current_user
+from app.api.dependencies import require_agent_or_admin
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/tickets", tags=["Tickets"])
@@ -395,13 +396,11 @@ def assign_ticket(
             )
             .values(assigned_agent_id=current_user.id)
         )
-        db.commit()
 
         if result.rowcount == 0:
-            # The WHERE clause didn't match.  Roll back to clear the session
-            # snapshot (belt-and-suspenders against REPEATABLE READ stale reads
-            # via SQLAlchemy's identity map), then re-query for fresh state.
-            db.rollback()
+            # WHERE clause matched nothing — nothing was written, so no commit
+            # is needed.  Read current DB state within this open transaction
+            # to diagnose why and return the appropriate error.
             ticket = db.query(Ticket).filter(Ticket.id == ticket_id).first()
 
             if not ticket:
@@ -410,27 +409,31 @@ def assign_ticket(
                     detail=f"Ticket {ticket_id} not found",
                 )
 
-            if ticket.assigned_agent_id == current_user.id:
-                # Idempotent: this agent already owns it (e.g. duplicate request).
-                logger.info(f"Ticket {ticket_id} already assigned to user {current_user.id}")
+            # Self-race guard: same agent fired two concurrent assign requests;
+            # the first succeeded (rowcount=1, now committed by peer), the second
+            # lands here (rowcount=0) and finds the ticket already theirs.
+            # Return 200 idempotently — nothing to commit.
+            if ticket.assigned_agent_id == current_user.id and ticket.status == "escalated":
+                logger.info(f"Ticket {ticket_id} already assigned to user {current_user.id} (self-race)")
                 return TicketResponse.model_validate(ticket)
-            elif ticket.assigned_agent_id is not None:
+
+            if ticket.assigned_agent_id is not None:
                 raise HTTPException(
                     status_code=status.HTTP_409_CONFLICT,
                     detail=f"Ticket already assigned to agent {ticket.assigned_agent_id}",
                 )
-            elif ticket.status != "escalated":
+            if ticket.status != "escalated":
                 raise HTTPException(
                     status_code=status.HTTP_409_CONFLICT,
                     detail=f"Ticket status changed to '{ticket.status}', cannot assign",
                 )
-            else:
-                raise HTTPException(
-                    status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                    detail="Failed to assign ticket due to concurrent update",
-                )
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail="Failed to assign ticket due to concurrent update",
+            )
 
-        # Success path: fetch the committed row for the response.
+        # rowcount == 1: UPDATE succeeded.  Commit, then fetch for the response.
+        db.commit()
         ticket = db.query(Ticket).filter(Ticket.id == ticket_id).first()
 
         if not ticket:
@@ -463,10 +466,10 @@ def close_ticket(
     Close an escalated or auto_resolved ticket.
 
     The atomic UPDATE is the sole concurrency gate — there is no pre-fetch race.
-    db.commit() is called immediately after the UPDATE so every exit path
-    (success, idempotent "already closed", or 409 conflict) operates on a
-    clean committed session, preventing dangling idle-in-transaction connections
-    on pooled deployments (Neon/PgBouncer).
+    rowcount is checked before db.commit() so the commit only happens when a
+    row was actually modified.  On the rowcount==0 path nothing was written, so
+    the open transaction is read-only and will be rolled back automatically when
+    the session closes.
 
     Args:
         ticket_id: ID of the ticket to close
@@ -490,9 +493,30 @@ def close_ticket(
             )
             .values(status="closed")
         )
-        db.commit()
 
-        # Post-update fetch — used only to build the response or diagnose rowcount == 0.
+        if result.rowcount == 0:
+            # WHERE clause matched nothing — nothing was written, no commit needed.
+            # Read current state to diagnose why.
+            ticket = db.query(Ticket).filter(Ticket.id == ticket_id).first()
+
+            if not ticket:
+                raise HTTPException(
+                    status_code=status.HTTP_404_NOT_FOUND,
+                    detail=f"Ticket {ticket_id} not found",
+                )
+
+            if ticket.status == "closed":
+                # Idempotent: already closed (e.g. duplicate concurrent request).
+                logger.info(f"Ticket {ticket_id} already closed, returning current state")
+                return TicketResponse.model_validate(ticket)
+
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail=f"Ticket status changed to '{ticket.status}', cannot close",
+            )
+
+        # rowcount == 1: UPDATE succeeded.  Commit, then fetch for the response.
+        db.commit()
         ticket = db.query(Ticket).filter(Ticket.id == ticket_id).first()
 
         if not ticket:
@@ -500,19 +524,6 @@ def close_ticket(
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail=f"Ticket {ticket_id} not found",
             )
-
-        if result.rowcount == 0:
-            # Ticket exists but the WHERE clause didn't match — determine why.
-            if ticket.status == "closed":
-                # Idempotent: already closed (e.g. duplicate request).
-                # Session is already clean (commit above) — no dangling transaction.
-                logger.info(f"Ticket {ticket_id} already closed, returning current state")
-                return TicketResponse.model_validate(ticket)
-            else:
-                raise HTTPException(
-                    status_code=status.HTTP_409_CONFLICT,
-                    detail=f"Ticket status changed to '{ticket.status}', cannot close",
-                )
 
         logger.info(f"Ticket {ticket_id} closed by user {current_user.id}")
         return TicketResponse.model_validate(ticket)
