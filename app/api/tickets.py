@@ -23,7 +23,7 @@ DO NOT:
 """
 
 from typing import List, Optional
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 from fastapi.security import OAuth2PasswordBearer
 from sqlalchemy import update
 from sqlalchemy.orm import Session
@@ -38,13 +38,18 @@ from app.models.ticket import Ticket
 from app.models.user import User
 from app.services.classifier import classify_intent
 from app.services.response_generator import generate_response
-from app.db.session import get_db
-from app.core.config import settings
-from fastapi import status
-from app.services.similarity_search import find_similar_ticket
 from app.services.decision_engine import decide_resolution
 from app.api.auth import decode_token, get_current_user
 from app.api.dependencies import require_agent_or_admin
+from app.core.config import settings
+from app.db.session import get_db
+from app.services.similarity_search import (
+    find_similar_ticket,
+    _get_cache_client,
+    _cache_key
+)
+import json
+from app.main import limiter
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/tickets", tags=["Tickets"])
@@ -76,29 +81,44 @@ def _run_ticket_automation(ticket: Ticket, db: Session) -> Ticket:
     ticket.sub_intent = sub_intent
 
     # Fetch resolved tickets for similarity search
-    resolved_tickets = (
-        db.query(Ticket)
-        .filter(
-            Ticket.status == "auto_resolved",
-            Ticket.response.isnot(None),
+    # Check cache first to avoid DB query (Issue #10)
+    cache = _get_cache_client()
+    key = _cache_key(ticket.message) if cache else None
+    similar_result = None
+    
+    if cache and key:
+        try:
+            cached = cache.get(key)
+            if cached:
+                similar_result = json.loads(cached)
+                logger.info(f"Similarity cache hit for ticket {ticket.id}")
+        except Exception:
+            pass
+
+    if similar_result is None:
+        resolved_tickets = (
+            db.query(Ticket)
+            .filter(
+                Ticket.status == "auto_resolved",
+                Ticket.response.isnot(None),
+            )
+            .order_by(Ticket.created_at.desc())
+            .limit(50)
+            .all()
         )
-        .order_by(Ticket.created_at.desc())
-        .limit(50)
-        .all()
-    )
 
-    # Convert to list of dicts for similarity search
-    resolved_tickets_data = [
-        {"message": t.message, "response": t.response, "quality_score": t.quality_score}
-        for t in resolved_tickets
-    ]
+        # Convert to list of dicts for similarity search
+        resolved_tickets_data = [
+            {"message": t.message, "response": t.response, "quality_score": t.quality_score}
+            for t in resolved_tickets
+        ]
 
-    # Find similar tickets
-    similar_result = find_similar_ticket(
-        ticket.message,
-        resolved_tickets_data,
-        similarity_threshold=settings.SIMILARITY_THRESHOLD,
-    )
+        # Find similar tickets
+        similar_result = find_similar_ticket(
+            ticket.message,
+            resolved_tickets_data,
+            similarity_threshold=settings.SIMILARITY_THRESHOLD,
+        )
 
     # Extract similar quality score
     similar_quality_score = similar_result.get("quality_score") if similar_result else None
@@ -143,7 +163,9 @@ def _run_ticket_automation(ticket: Ticket, db: Session) -> Ticket:
 
 
 @router.post("/", response_model=TicketResponse, status_code=status.HTTP_201_CREATED)
+@limiter.limit(f"{settings.RATE_LIMIT_PER_MINUTE}/minute")
 def create_ticket(
+    request: Request,
     ticket_data: TicketCreate,
     db: Session = Depends(get_db),
     token: Optional[str] = Depends(oauth2_scheme_optional),
