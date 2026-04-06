@@ -119,6 +119,13 @@ class Ticket(Base):
         doc="ID of the submitting user. Null for unauthenticated submissions.",
     )
 
+    assigned_agent_id = Column(
+        Integer,
+        ForeignKey('users.id'),
+        nullable=True,
+        doc="Agent assigned to handle this ticket.",
+    )
+
     created_at = Column(
         DateTime,
         default=lambda: datetime.now(timezone.utc),
@@ -138,3 +145,4 @@ class Ticket(Base):
     )
 
     user = relationship("User", foreign_keys=[user_id])
+    assigned_agent = relationship("User", foreign_keys=[assigned_agent_id])

@@ -116,6 +116,12 @@ def get_metrics(
         auto_resolve_rate = (auto_resolved / total_tickets * 100) if total_tickets > 0 else 0
         escalation_rate = (escalated / total_tickets * 100) if total_tickets > 0 else 0
         
+        # Count unassigned escalated tickets
+        unassigned_escalated = db.query(Ticket).filter(
+            Ticket.status == "escalated",
+            Ticket.assigned_agent_id.is_(None)
+        ).count()
+        
         # Feedback statistics
         total_feedback = db.query(Feedback).count()
         
@@ -147,7 +153,8 @@ def get_metrics(
                 "escalation_rate": round(escalation_rate, 2),
                 "open": open_tickets,
                 "auto_resolved": auto_resolved,
-                "escalated": escalated
+                "escalated": escalated,
+                "unassigned_escalated": unassigned_escalated
             },
             "feedback": {
                 "total": total_feedback,

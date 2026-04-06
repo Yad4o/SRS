@@ -82,6 +82,7 @@ class TicketResponse(BaseModel):
     response: Optional[str] = None
     response_source: Optional[str] = None
     user_id: Optional[int] = None
+    assigned_agent_id: Optional[int] = None
     created_at: datetime
 
     model_config = ConfigDict(from_attributes=True)
