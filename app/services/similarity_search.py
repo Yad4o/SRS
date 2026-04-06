@@ -8,7 +8,6 @@ import uuid
 from collections import Counter
 from typing import Dict, List, Optional
 
-import redis
 from app.core.config import settings
 
 # Redis client singleton for lazy load
@@ -38,6 +37,7 @@ def _get_cache_client():
         return None
         
     try:
+        import redis
         _redis_client = redis.from_url(
             settings.REDIS_URL, decode_responses=True, socket_timeout=1
         )
@@ -189,7 +189,18 @@ def _cosine_similarity(tfidf1: Dict[str, float], tfidf2: Dict[str, float]) -> fl
 def find_similar_ticket(new_message: str, resolved_tickets: List[Dict], similarity_threshold: float = None) -> Optional[Dict]:
     """
     Find the most similar resolved ticket to a new ticket message.
-    ... (docstring)
+    
+    This function implements similarity search to find previously resolved tickets that match
+    a new ticket's message. If a similar resolved ticket exists, its solution can be reused.
+    Reference: Technical Spec § 9.2 (Similarity Search)
+    
+    Args:
+        new_message: The new ticket message to find matches for
+        resolved_tickets: List of resolved ticket objects with 'message' and optionally 'response'
+        similarity_threshold: Minimum similarity score to consider a match (default: 0.7)
+        
+    Returns:
+        Dict with {"matched_text": str, "similarity_score": float} or None if no match above threshold
     """
     global _redis_client
     if not new_message or not isinstance(new_message, str):
