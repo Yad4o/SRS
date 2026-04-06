@@ -7,8 +7,9 @@ import re
 import uuid
 from collections import Counter
 from typing import Dict, List, Optional
-
 from app.core.config import settings
+from app.models.ticket import Ticket
+from sqlalchemy.orm import Session
 
 # Redis client singleton for lazy load
 _redis_client = None
@@ -186,6 +187,20 @@ def _cosine_similarity(tfidf1: Dict[str, float], tfidf2: Dict[str, float]) -> fl
     return dot_product / (magnitude1 * magnitude2)
 
 
+def get_resolved_tickets(db: Session) -> List[Ticket]:
+    """Fetch recent successfully resolved tickets for similarity search."""
+    return (
+        db.query(Ticket)
+        .filter(
+            Ticket.status == "auto_resolved",
+            Ticket.response.isnot(None),
+        )
+        .order_by(Ticket.created_at.desc())
+        .limit(50)
+        .all()
+    )
+
+
 def find_similar_ticket(new_message: str, resolved_tickets: List[Dict], similarity_threshold: float = None) -> Optional[Dict]:
     """
     Find the most similar resolved ticket to a new ticket message.
@@ -213,15 +228,6 @@ def find_similar_ticket(new_message: str, resolved_tickets: List[Dict], similari
     cache = _get_cache_client()
     key = _cache_key(new_message) if cache else None
 
-    if cache and key:
-        try:
-            cached = cache.get(key)
-            if cached is not None:
-                return json.loads(cached)
-        except Exception:
-            _redis_client = None  # Force reconnect attempt next call
-            pass  # Cache miss or error — continue normally
-
     # Validate similarity_threshold parameter
     if similarity_threshold is None:
         similarity_threshold = settings.SIMILARITY_THRESHOLD
@@ -230,12 +236,25 @@ def find_similar_ticket(new_message: str, resolved_tickets: List[Dict], similari
     if not (0.0 <= similarity_threshold <= 1.0):
         raise ValueError("similarity_threshold must be between 0.0 and 1.0")
 
+    # Check cache hit (threshold-independent)
+    if cache and key:
+        try:
+            cached = cache.get(key)
+            if cached is not None:
+                cached_data = json.loads(cached)
+                # Apply current threshold to cached raw result
+                if cached_data and cached_data.get("similarity_score", 0.0) >= similarity_threshold:
+                    return cached_data
+                return None # Message is in cache but doesn't meet this threshold
+        except Exception:
+            _redis_client = None
+            pass
+
     # Extract messages from resolved tickets
     ticket_messages = []
     for ticket in resolved_tickets:
         if isinstance(ticket, dict) and "message" in ticket:
             message = ticket["message"]
-            # Only accept string messages and skip blank/whitespace-only ones
             if isinstance(message, str) and message.strip() != "":
                 ticket_messages.append(message.strip())
 
@@ -259,12 +278,7 @@ def find_similar_ticket(new_message: str, resolved_tickets: List[Dict], similari
             continue
 
         ticket_message = ticket["message"]
-
-        # Skip non-string or blank messages (consistent with earlier validation)
-        if (
-            not isinstance(ticket_message, str)
-            or ticket_message.strip() == ""
-        ):
+        if not isinstance(ticket_message, str) or ticket_message.strip() == "":
             continue
 
         # Calculate TF-IDF for this ticket
@@ -274,31 +288,32 @@ def find_similar_ticket(new_message: str, resolved_tickets: List[Dict], similari
         # Calculate cosine similarity
         similarity = _cosine_similarity(new_tfidf, ticket_tfidf)
 
-        # Update best match if this is better (or equal for first candidate)
-        if similarity > best_similarity or (
-            best_similarity == 0.0 and similarity == 0.0
-        ):
+        if similarity > best_similarity or (best_similarity == 0.0 and similarity == 0.0):
             best_similarity = similarity
             best_match = ticket_message
             best_ticket = ticket
 
-    # Check if best match meets threshold
-    result = None
-    if best_match and best_similarity >= similarity_threshold:
-        result = {
+    # Prepare raw result (best match found, for caching)
+    raw_result = None
+    if best_match:
+        raw_result = {
             "matched_text": best_match,
             "similarity_score": round(best_similarity, 3),
-            "ticket": best_ticket,  # Include the original ticket for access to response/solution
+            "ticket": best_ticket,
             "quality_score": best_ticket.get("quality_score"),
         }
 
-    # Record result to cache
+    # Record raw result to cache (threshold-independent)
     if cache and key:
         try:
-            ttl = 300 if result is not None else 120
-            cache.setex(key, ttl, json.dumps(result, cls=SafeEncoder))
+            # We always cache the best found match so future calls with lower thresholds can use it
+            cache.setex(key, 300, json.dumps(raw_result, cls=SafeEncoder))
         except Exception:
             _redis_client = None
-            pass  # Cache write failure is not a problem
+            pass
 
-    return result
+    # Check if raw result meets the requested threshold for THIS call
+    if raw_result and raw_result["similarity_score"] >= similarity_threshold:
+        return raw_result
+    
+    return None

@@ -20,14 +20,20 @@ from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from slowapi import _rate_limit_exceeded_handler
+from slowapi.errors import RateLimitExceeded
+from app.core.limiter import limiter
 
 # TODO (later): import routers when they are implemented
 # from app.api import tickets, feedback, admin
-from app.api import auth, demo, tickets, feedback, admin
+
 
 from app.core.config import settings
 from app.db.session import engine, init_db
 from app.core.error_handlers import setup_exception_handlers
+
+# from app.api import tickets, feedback, admin
+from app.api import auth, demo, tickets, feedback, admin
 
 
 # --------------------------------------------------
@@ -100,6 +106,11 @@ def create_app() -> FastAPI:
         allow_methods=["*"],
         allow_headers=["*"],
     )
+
+    # Rate Limit Setup (decorator-only mode)
+    app.state.limiter = limiter
+    app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
+    # SlowAPIMiddleware is NOT added - decorator-only mode avoids response wrapping issues
 
     # --------------------------------------------------
     # Exception Handler Registration

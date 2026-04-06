@@ -24,6 +24,7 @@ DO NOT:
 
 from pydantic import BaseModel, ConfigDict, Field
 from datetime import datetime
+from typing import Optional
 
 
 class FeedbackCreate(BaseModel):
@@ -68,6 +69,7 @@ class FeedbackResponse(BaseModel):
     ticket_id: int
     rating: int
     resolved: bool
+    quality_score: Optional[float] = None
     created_at: datetime
 
     model_config = ConfigDict(from_attributes=True)

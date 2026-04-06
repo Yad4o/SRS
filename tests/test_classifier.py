@@ -97,3 +97,10 @@ def test_pattern_only_matching():
     result = classify_intent("how do I contact support")
     assert result["intent"] == "general_query"
     assert 0.7 <= result["confidence"] <= 1.0
+
+
+def test_classifier_sub_intent_reset():
+    """Verify 'forgot my password' -> sub_intent == 'password_reset'."""
+    result = classify_intent("forgot my password")
+    assert result["intent"] == "login_issue"
+    assert result["sub_intent"] == "password_reset"

@@ -97,6 +97,11 @@ class Feedback(Base):
     
     ticket = relationship("Ticket", back_populates="feedback")
 
+    @property
+    def quality_score(self) -> float:
+        """Return the quality score from the associated ticket."""
+        return self.ticket.quality_score if self.ticket else 0.0
+
     # -------------------------------------------------
     # TODO (Future Enhancements)
     # -------------------------------------------------

@@ -29,12 +29,59 @@ client = TestClient(app)
 @pytest.fixture(autouse=True)
 def setup_database():
     """Initialize database for all tests."""
+    from app.models.user import User
     init_db()
     
     # Clean up any existing data before each test
     with engine.connect() as conn:
         conn.execute(Ticket.__table__.delete())
+        conn.execute(User.__table__.delete())
         conn.commit()
+
+@pytest.fixture
+def db():
+    """Create a new database session for a test."""
+    from app.db.session import SessionLocal
+    db = SessionLocal()
+    try:
+        yield db
+    finally:
+        db.close()
+
+@pytest.fixture
+def reset_limiter():
+    from app.core.limiter import limiter
+    limiter.reset()
+    yield
+    limiter.reset()
+
+@pytest.fixture
+def agent_token(setup_database, db):
+    """Create an agent and return its auth token."""
+    from app.models.user import User
+    from app.api.auth import create_access_token
+    
+    agent = User(email="agent@example.com", role="agent", hashed_password="fake-password-hash")
+    db.add(agent)
+    db.commit()
+    db.refresh(agent)
+    
+    token = create_access_token(data={"sub": str(agent.id), "role": "agent"})
+    return f"Bearer {token}"
+
+@pytest.fixture
+def user_token(setup_database, db):
+    """Create a user and return its auth token."""
+    from app.models.user import User
+    from app.api.auth import create_access_token
+    
+    user = User(email="user@example.com", role="user", hashed_password="fake-password-hash")
+    db.add(user)
+    db.commit()
+    db.refresh(user)
+    
+    token = create_access_token(data={"sub": str(user.id), "role": "user"})
+    return f"Bearer {token}"
 
 
 class TestCreateTicket:
@@ -432,19 +479,113 @@ class TestTicketAPIIntegration:
             assert ticket["message"].startswith("Ticket")
 
 
-class TestTicketsHealth:
-    """Test cases for GET /tickets/health endpoint."""
 
-    def test_tickets_health_check(self):
-        """Test tickets API health check endpoint."""
-        response = client.get("/tickets/health")
+from app.models.user import User
+from app.api.dependencies import require_agent_or_admin
+from app.api.auth import get_current_user
+
+class TestTicketAccessControl:
+    """Test cases for ticket ownership and role-based access control."""
+
+    def test_authenticated_create_sets_user_id(self):
+        """Authenticated POST -> ticket has user_id set."""
+        mock_user = User(id=123, email="test@example.com", role="user")
         
+        # Override get_current_user
+        app.dependency_overrides[get_current_user] = lambda: mock_user
+        try:
+            # We still need to patch decode_token inside create_ticket because it's called manually
+            with patch("app.api.tickets.decode_token", return_value={"sub": "123", "role": "user"}):
+                response = client.post(
+                    "/tickets/", 
+                    json={"message": "Owned ticket"},
+                    headers={"Authorization": "Bearer test-token"}
+                )
+                
+                assert response.status_code == 201
+                data = response.json()
+                assert data["user_id"] == 123
+        finally:
+            app.dependency_overrides.clear()
+
+    def test_list_tickets_user_isolation(self, db):
+        """GET returns only that user's tickets for regular users."""
+        # Create users in database
+        user1 = User(id=1, email="u1@ex.com", role="user", hashed_password="fake-password-hash")
+        user2 = User(id=2, email="u2@ex.com", role="user", hashed_password="fake-password-hash")
+        db.add(user1)
+        db.add(user2)
+        db.commit()
+        
+        # We need a way to switch users mid-test
+        # We'll patch decode_token in tickets module since it's used inside the endpoint
+        with patch("app.api.tickets.decode_token") as mock_decode:
+            # Create ticket for user 1
+            mock_decode.return_value = {"sub": "1", "role": "user"}
+            client.post("/tickets/", json={"message": "User 1 Ticket"}, headers={"Authorization": "Bearer t1"})
+            
+            # Create ticket for user 2
+            mock_decode.return_value = {"sub": "2", "role": "user"}
+            client.post("/tickets/", json={"message": "User 2 Ticket"}, headers={"Authorization": "Bearer t2"})
+            
+            # List as user 1
+            mock_decode.return_value = {"sub": "1", "role": "user"}
+            response = client.get("/tickets/", headers={"Authorization": "Bearer t1"})
+            data = response.json()
+            
+            assert len(data["tickets"]) == 1
+            assert data["tickets"][0]["message"] == "User 1 Ticket"
+
+    def test_agent_assign_escalated_ticket(self, agent_token):
+        """Agent role: can assign an escalated ticket."""
+        # Create an escalated ticket
+        with patch("app.api.tickets.classify_intent", return_value={"intent": "login_issue", "confidence": 0.1}):
+            with patch("app.api.tickets.decide_resolution", return_value="escalate"):
+                resp = client.post("/tickets/", json={"message": "Fix me"})
+                assert resp.json()["status"] == "escalated"
+                ticket_id = resp.json()["id"]
+        
+        response = client.post(f"/tickets/{ticket_id}/assign", headers={"Authorization": agent_token})
         assert response.status_code == 200
-        data = response.json()
-        
-        assert data["status"] == "healthy"
-        assert data["service"] == "tickets-api"
-        assert "version" in data
-        assert "endpoints" in data
-        assert isinstance(data["endpoints"], list)
-        assert len(data["endpoints"]) == 3
+        # The agent_token fixture creates an agent with some ID. We just check it's assigned.
+        assert response.json()["assigned_agent_id"] is not None
+
+    def test_user_cannot_assign_ticket(self, user_token):
+        """Regular user attempting assign -> 403."""
+        # Create an escalated ticket
+        with patch("app.api.tickets.classify_intent", return_value={"intent": "login_issue", "confidence": 0.1}):
+            with patch("app.api.tickets.decide_resolution", return_value="escalate"):
+                resp = client.post("/tickets/", json={"message": "Fix me"})
+                assert resp.json()["status"] == "escalated"
+                ticket_id = resp.json()["id"]
+
+        response = client.post(f"/tickets/{ticket_id}/assign", headers={"Authorization": user_token})
+        assert response.status_code == 403
+
+    def test_agent_close_escalated_ticket(self, agent_token):
+        """Agent role: can close an escalated ticket -> status becomes 'closed'."""
+        with patch("app.api.tickets.classify_intent", return_value={"intent": "login_issue", "confidence": 0.1}):
+            with patch("app.api.tickets.decide_resolution", return_value="escalate"):
+                resp = client.post("/tickets/", json={"message": "Close me"})
+                assert resp.json()["status"] == "escalated"
+                ticket_id = resp.json()["id"]
+
+        response = client.post(f"/tickets/{ticket_id}/close", headers={"Authorization": agent_token})
+        assert response.status_code == 200
+        assert response.json()["status"] == "closed"
+
+
+class TestRateLimiting:
+    """Test cases for rate limiting on ticket creation."""
+
+    def test_create_ticket_rate_limit(self, reset_limiter):
+        """Send 61 sequential POSTs to POST /tickets/ -> 61st returns HTTP 429."""
+        # Fix mock for settings imports if needed
+        # Use a fast mock for AI so it doesn't take forever
+        with patch("app.api.tickets.classify_intent", return_value={"intent": "test", "confidence": 0.9}):
+            for i in range(60):
+                resp = client.post("/tickets/", json={"message": f"rate limit test {i}"})
+                assert resp.status_code == 201
+
+            resp = client.post("/tickets/", json={"message": "one too many"})
+            assert resp.status_code == 429

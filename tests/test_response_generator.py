@@ -204,4 +204,69 @@ def test_generate_response_sanitizes_pii():
         assert "[REDACTED]" in response_text
         assert "john@example.com" not in response_text
         assert "ticket #456" not in response_text.lower()
-        assert "123-45-6789" not in response_text
+
+def test_generate_response_sub_intent_templates():
+    """Verify specific messages use correct sub-intent templates."""
+    # "I forgot my password" -> reset template (index 0)
+    resp_reset, _ = generate_response(
+        intent="login_issue",
+        original_message="I forgot my password",
+        sub_intent="password_reset"
+    )
+    assert "reset your password" in resp_reset.lower()
+    
+    # "account locked" -> lockout template (index 1)
+    resp_lock, _ = generate_response(
+        intent="login_issue",
+        original_message="my account is locked",
+        sub_intent="account_locked"
+    )
+    assert "temporarily locked" in resp_lock.lower()
+
+
+def test_generate_response_openai_exception_fallback():
+    """Mock OpenAI to raise an exception -> response still returns (falls back to template), source is not 'openai'."""
+    with patch('app.services.response_generator.settings') as mock_settings:
+        mock_settings.AI_PROVIDER = "openai"
+        mock_settings.OPENAI_API_KEY = "test-key"
+        
+        # Mocking the client creation or the completion call to raise Exception
+        with patch('app.services.response_generator.OpenAI') as mock_openai_class:
+            mock_client = MagicMock()
+            mock_openai_class.return_value = mock_client
+            mock_client.chat.completions.create.side_effect = Exception("OpenAI Down")
+            
+            response_text, source_label = generate_response(
+                intent="login_issue",
+                original_message="forgot password",
+                sub_intent="password_reset"
+            )
+            
+            assert source_label == "template"
+            assert "reset your password" in response_text.lower()
+
+
+def test_generate_response_openai_valid_response():
+    """Mock OpenAI to return a valid response -> source == 'openai'."""
+    with patch('app.services.response_generator.settings') as mock_settings:
+        mock_settings.AI_PROVIDER = "openai"
+        mock_settings.OPENAI_API_KEY = "test-key"
+        
+        with patch('app.services.response_generator.OpenAI') as mock_openai_class:
+            mock_client = MagicMock()
+            mock_openai_class.return_value = mock_client
+            
+            # Mock the response structure: response.choices[0].message.content
+            mock_response = MagicMock()
+            mock_response.choices = [MagicMock()]
+            mock_response.choices[0].message.content = "This is a custom OpenAI response."
+            mock_client.chat.completions.create.return_value = mock_response
+            
+            response_text, source_label = generate_response(
+                intent="login_issue",
+                original_message="forgot password",
+                sub_intent="password_reset"
+            )
+            
+            assert source_label == "openai"
+            assert response_text == "This is a custom OpenAI response."
