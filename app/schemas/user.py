@@ -63,10 +63,12 @@ class UserCreate(BaseModel):
     -------
     - email: User email (validated as EmailStr)
     - password: Plain-text password (will be hashed by auth API before storage)
+    - role: User role (optional, defaults to "user")
     """
 
     email: EmailStr
     password: str
+    role: str = "user"  # Default to "user" if not specified
 
     @field_validator("password")
     @classmethod
@@ -89,6 +91,17 @@ class UserCreate(BaseModel):
             raise ValueError("Password must contain at least one digit")
         if not re.search(r"[!@#$%^&*(),.?\":{}|<>]", v):
             raise ValueError("Password must contain at least one special character")
+        return v
+
+    @field_validator("role")
+    @classmethod
+    def validate_role(cls, v: str) -> str:
+        """
+        Validate that role is one of the allowed roles.
+        """
+        from app.core.config import ALLOWED_ROLES
+        if v not in ALLOWED_ROLES:
+            raise ValueError(f"Role must be one of: {', '.join(ALLOWED_ROLES)}")
         return v
 
 
