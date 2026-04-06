@@ -24,3 +24,4 @@ embeddings.json
 feedback_analysis.json
 metrics.json
 metrics_*.json
+support.db

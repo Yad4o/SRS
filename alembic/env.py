@@ -10,10 +10,6 @@ from alembic import context
 # Add the project root to sys.path to import app modules
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-# Import application settings and models
-from app.core.config import settings
-from app.db.session import Base
-
 # this is the Alembic Config object, which provides
 # access to the values within the .ini file in use.
 config = context.config
@@ -25,14 +21,7 @@ if config.config_file_name is not None:
 
 # add your model's MetaData object here
 # for 'autogenerate' support
-# from myapp import mymodel
-# target_metadata = mymodel.Base.metadata
-target_metadata = Base.metadata
-
-# other values from the config, defined by the needs of env.py,
-# can be acquired:
-# my_important_option = config.get_main_option("my_important_option")
-# ... etc.
+# target_metadata = Base.metadata  <-- Handled inside functions instead
 
 
 def run_migrations_offline() -> None:
@@ -47,11 +36,20 @@ def run_migrations_offline() -> None:
     script output.
 
     """
+    # Deferred to avoid circular import at alembic module load time
+    # app imports are safe inside function scope after sys.path is configured
+    from app.core.config import settings
+    from app.db.session import Base
+    from app.models import user, ticket, feedback  # noqa: F401
+    
     # Prefer application DB URL over static alembic.ini value
-    url = settings.DATABASE_URL if settings.DATABASE_URL else config.get_main_option("sqlalchemy.url")
+    db_url = settings.DATABASE_URL or config.get_main_option("sqlalchemy.url")
+    if not db_url:
+        raise ValueError("DATABASE_URL is not set in settings or alembic.ini")
+        
     context.configure(
-        url=url,
-        target_metadata=target_metadata,
+        url=db_url,
+        target_metadata=Base.metadata,
         literal_binds=True,
         dialect_opts={"paramstyle": "named"},
     )
@@ -67,20 +65,27 @@ def run_migrations_online() -> None:
     and associate a connection with the context.
 
     """
-    # Prefer application DB URL over static alembic.ini value
-    config_section = config.get_section(config.config_ini_section, {})
-    if settings.DATABASE_URL:
-        config_section['sqlalchemy.url'] = settings.DATABASE_URL
+    # Deferred to avoid circular import at alembic module load time
+    from app.core.config import settings
+    from app.db.session import Base
+    from app.models import user, ticket, feedback  # noqa: F401
     
+    # Prefer application DB URL over static alembic.ini value
+    configuration = config.get_section(config.config_ini_section) or {}
+    db_url = settings.DATABASE_URL or config.get_main_option("sqlalchemy.url")
+    if not db_url:
+        raise ValueError("DATABASE_URL is not set in settings or alembic.ini")
+    configuration["sqlalchemy.url"] = db_url
+
     connectable = engine_from_config(
-        config_section,
+        configuration,
         prefix="sqlalchemy.",
         poolclass=pool.NullPool,
     )
 
     with connectable.connect() as connection:
         context.configure(
-            connection=connection, target_metadata=target_metadata
+            connection=connection, target_metadata=Base.metadata
         )
 
         with context.begin_transaction():
