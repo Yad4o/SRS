@@ -12,79 +12,13 @@ Covers:
 """
 
 import pytest
-from fastapi.testclient import TestClient
-from sqlalchemy.orm import Session
 from unittest.mock import patch, MagicMock
 
-from app.main import app
-from app.db.session import get_db, engine, init_db
-from app.models.ticket import Ticket
+from tests.conftest import BaseTestClass, client, TestDataFactory, DatabaseHelper, AuthHelper
 from app.schemas.ticket import TicketCreate
 
 
-# Test client
-client = TestClient(app)
-
-
-@pytest.fixture(autouse=True)
-def setup_database():
-    """Initialize database for all tests."""
-    from app.models.user import User
-    init_db()
-    
-    # Clean up any existing data before each test
-    with engine.connect() as conn:
-        conn.execute(Ticket.__table__.delete())
-        conn.execute(User.__table__.delete())
-        conn.commit()
-
-@pytest.fixture
-def db():
-    """Create a new database session for a test."""
-    from app.db.session import SessionLocal
-    db = SessionLocal()
-    try:
-        yield db
-    finally:
-        db.close()
-
-@pytest.fixture
-def reset_limiter():
-    from app.core.limiter import limiter
-    limiter.reset()
-    yield
-    limiter.reset()
-
-@pytest.fixture
-def agent_token(setup_database, db):
-    """Create an agent and return its auth token."""
-    from app.models.user import User
-    from app.api.auth import create_access_token
-    
-    agent = User(email="agent@example.com", role="agent", hashed_password="fake-password-hash")
-    db.add(agent)
-    db.commit()
-    db.refresh(agent)
-    
-    token = create_access_token(data={"sub": str(agent.id), "role": "agent"})
-    return f"Bearer {token}"
-
-@pytest.fixture
-def user_token(setup_database, db):
-    """Create a user and return its auth token."""
-    from app.models.user import User
-    from app.api.auth import create_access_token
-    
-    user = User(email="user@example.com", role="user", hashed_password="fake-password-hash")
-    db.add(user)
-    db.commit()
-    db.refresh(user)
-    
-    token = create_access_token(data={"sub": str(user.id), "role": "user"})
-    return f"Bearer {token}"
-
-
-class TestCreateTicket:
+class TestCreateTicket(BaseTestClass):
     """Test cases for POST /tickets endpoint."""
 
     def test_create_ticket_success(self):
@@ -467,4 +401,6 @@ class TestRateLimiting(BaseTestClass):
             for i in range(60):
                 resp = client.post("/tickets/", json={"message": f"rate limit test {i}"})
                 assert resp.status_code == 201
+
+            resp = client.post("/tickets/", json={"message": "one too many"})
             assert resp.status_code == 429
