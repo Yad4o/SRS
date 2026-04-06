@@ -449,65 +449,62 @@ def close_ticket(
 ) -> TicketResponse:
     """
     Close an escalated or auto_resolved ticket.
-    
+
+    The atomic UPDATE is the sole concurrency gate — there is no pre-fetch race.
+    db.commit() is called immediately after the UPDATE so every exit path
+    (success, idempotent "already closed", or 409 conflict) operates on a
+    clean committed session, preventing dangling idle-in-transaction connections
+    on pooled deployments (Neon/PgBouncer).
+
     Args:
         ticket_id: ID of the ticket to close
         db: Database session dependency
         current_user: Current authenticated agent/admin user
-        
+
     Returns:
         TicketResponse: The updated closed ticket
-        
+
     Raises:
-        HTTPException: 404 if ticket not found, 400 if status not allowed, 403 if not agent/admin
+        HTTPException: 404 if ticket not found, 409 on conflict, 403 if not agent/admin
     """
     try:
-        # Fetch ticket by ID
-        ticket = db.query(Ticket).filter(Ticket.id == ticket_id).first()
-        
-        if not ticket:
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail=f"Ticket with ID {ticket_id} not found"
-            )
-        
-        # Only escalated or auto_resolved tickets can be closed
-        if ticket.status not in ("escalated", "auto_resolved"):
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Only escalated or auto_resolved tickets can be closed"
-            )
-        
-        # Atomic conditional update to close ticket - guards against concurrent status change
+        # Single atomic UPDATE: only succeeds when the ticket exists and is in
+        # a closeable state.  No pre-fetch → no TOCTOU window.
         result = db.execute(
             update(Ticket)
             .where(
                 Ticket.id == ticket_id,
-                Ticket.status.in_(["escalated", "auto_resolved"])  # Guard against concurrent status change
+                Ticket.status.in_(["escalated", "auto_resolved"]),
             )
             .values(status="closed")
         )
-        
+        db.commit()
+
+        # Post-update fetch — used only to build the response or diagnose rowcount == 0.
+        ticket = db.query(Ticket).filter(Ticket.id == ticket_id).first()
+
+        if not ticket:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"Ticket {ticket_id} not found",
+            )
+
         if result.rowcount == 0:
-            # Another thread changed status - check current state
-            db.refresh(ticket)
+            # Ticket exists but the WHERE clause didn't match — determine why.
             if ticket.status == "closed":
-                # Already closed, idempotent success
+                # Idempotent: already closed (e.g. duplicate request).
+                # Session is already clean (commit above) — no dangling transaction.
+                logger.info(f"Ticket {ticket_id} already closed, returning current state")
                 return TicketResponse.model_validate(ticket)
             else:
                 raise HTTPException(
                     status_code=status.HTTP_409_CONFLICT,
-                    detail=f"Ticket status changed to '{ticket.status}', cannot close"
+                    detail=f"Ticket status changed to '{ticket.status}', cannot close",
                 )
-        
-        db.commit()
-        
-        # Refresh ticket to get updated state
-        db.refresh(ticket)
-        
+
         logger.info(f"Ticket {ticket_id} closed by user {current_user.id}")
         return TicketResponse.model_validate(ticket)
-        
+
     except HTTPException:
         raise
     except Exception as e:
@@ -515,7 +512,7 @@ def close_ticket(
         logger.exception(f"Failed to close ticket {ticket_id}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Internal server error occurred while closing ticket"
+            detail="Internal server error occurred while closing ticket",
         ) from e
 
 
