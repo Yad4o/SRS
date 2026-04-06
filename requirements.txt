@@ -36,15 +36,17 @@ openai==1.30.0
 #sentence-transformers==2.5.1
 
 # -----------------------------
-# HTTP Client (future external APIs)
+# HTTP Client / Service Dependencies
 # -----------------------------
 httpx==0.27.0
+redis==5.0.4
 
+# -----------------------------
 # Utilities
 # -----------------------------
 typing-extensions==4.9.0
-redis==5.0.4
 
+# -----------------------------
 # Testing (optional but recommended)
 # -----------------------------
 pytest==8.0.2

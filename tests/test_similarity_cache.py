@@ -17,8 +17,8 @@ def test_cache_prevents_duplicate_db_queries():
         {"message": "test issue", "response": "restart", "quality_score": 1.0}
     ]
 
-    with patch("app.services.similarity_search.redis") as mock_redis:
-        mock_redis.from_url.return_value = mock_cache
+    # Patch redis.from_url at the source module to ensure it's intercepted
+    with patch("redis.from_url", return_value=mock_cache):
         with patch("app.core.config.settings") as mock_settings:
             mock_settings.REDIS_URL = "redis://localhost"
             mock_settings.SIMILARITY_THRESHOLD = 0.5
@@ -27,12 +27,13 @@ def test_cache_prevents_duplicate_db_queries():
             res1 = find_similar_ticket("test issue", resolved_tickets)
             assert res1 is not None
             assert res1["matched_text"] == "test issue"
+            # Verify first call did real work (cache miss -> computation -> write)
+            assert mock_cache.setex.call_count == 1
 
             # Second call (Hit)
             res2 = find_similar_ticket("test issue", resolved_tickets)
             assert res2 is not None
-            assert res2["matched_text"] == "cached"
-
-    # Verify cache interactions
-    assert mock_cache.get.call_count == 2
-    assert mock_cache.setex.call_count == 1  # Only called on the first (miss) path
+            assert res2["matched_text"] == "cached"  # Came from mock, not computation
+            
+            # Verify cache interactions
+            assert mock_cache.get.call_count == 2
