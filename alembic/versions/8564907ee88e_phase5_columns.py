@@ -26,13 +26,21 @@ def upgrade() -> None:
         batch_op.add_column(sa.Column('quality_score', sa.Float(), nullable=True))
         batch_op.add_column(sa.Column('user_id', sa.Integer(), nullable=True))
         batch_op.add_column(sa.Column('assigned_agent_id', sa.Integer(), nullable=True))
+        
+        # NOTE: FK constraints are no-ops on SQLite (batch mode). Always verify against PostgreSQL.
         batch_op.create_foreign_key('fk_tickets_assigned_agent_id', 'users', ['assigned_agent_id'], ['id'])
         batch_op.create_foreign_key('fk_tickets_user_id', 'users', ['user_id'], ['id'])
+        
+        # Added indexes for performance on frequently queried foreign keys
+        batch_op.create_index('ix_tickets_user_id', ['user_id'])
+        batch_op.create_index('ix_tickets_assigned_agent_id', ['assigned_agent_id'])
 
 
 def downgrade() -> None:
     """Downgrade schema."""
     with op.batch_alter_table('tickets', schema=None) as batch_op:
+        batch_op.drop_index('ix_tickets_assigned_agent_id')
+        batch_op.drop_index('ix_tickets_user_id')
         batch_op.drop_constraint('fk_tickets_user_id', type_='foreignkey')
         batch_op.drop_constraint('fk_tickets_assigned_agent_id', type_='foreignkey')
         batch_op.drop_column('assigned_agent_id')
