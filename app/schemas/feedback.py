@@ -47,6 +47,24 @@ class FeedbackCreate(BaseModel):
     resolved: bool = Field(..., description="Whether the user's issue was actually resolved")
 
 
+class FeedbackCreateNested(BaseModel):
+    """
+    Schema used when submitting feedback via nested route /tickets/{ticket_id}/feedback.
+
+    Used in:
+    --------
+    POST /tickets/{ticket_id}/feedback
+
+    Fields:
+    -------
+    - rating: User rating (1-5) for resolution quality
+    - resolved: Whether the issue was actually resolved
+    """
+
+    rating: int = Field(..., ge=1, le=5, description="Rating from 1 (poor) to 5 (excellent)")
+    resolved: bool = Field(..., description="Whether the user's issue was actually resolved")
+
+
 class FeedbackResponse(BaseModel):
     """
     Schema returned when fetching feedback for a ticket.

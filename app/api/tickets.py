@@ -34,8 +34,10 @@ from app.schemas.ticket import (
     TicketResponse,
     TicketList,
 )
+from app.schemas.feedback import FeedbackCreate, FeedbackResponse, FeedbackCreateNested
 from app.models.ticket import Ticket
 from app.models.user import User
+from app.models.feedback import Feedback
 from app.services.classifier import classify_intent
 from app.services.response_generator import generate_response
 from app.services.decision_engine import decide_resolution
@@ -550,6 +552,88 @@ def close_ticket(
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Internal server error occurred while closing ticket",
+        ) from e
+
+
+@router.post("/{ticket_id}/feedback", response_model=FeedbackResponse, status_code=status.HTTP_201_CREATED)
+def create_ticket_feedback(
+    ticket_id: int,
+    feedback_data: FeedbackCreateNested,
+    db: Session = Depends(get_db),
+) -> FeedbackResponse:
+    """
+    Create feedback for a resolved ticket.
+    
+    This endpoint allows users to submit feedback for tickets that have been
+    resolved (either auto_resolved or closed). The feedback includes a rating
+    and whether the issue was actually resolved.
+    
+    Args:
+        ticket_id: ID of the ticket to provide feedback for
+        feedback_data: Feedback data including rating and resolution status
+        db: Database session dependency
+        
+    Returns:
+        FeedbackResponse: Created feedback record
+        
+    Raises:
+        HTTPException: If ticket not found, not resolved, or feedback already exists
+    """
+    try:
+        # Validate that ticket exists
+        ticket = db.query(Ticket).filter(Ticket.id == ticket_id).first()
+        if not ticket:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"Ticket with ID {ticket_id} not found"
+            )
+        
+        # Check if ticket is in resolved state
+        if ticket.status not in ["auto_resolved", "closed"]:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Ticket {ticket_id} is not resolved (current status: {ticket.status})"
+            )
+        
+        # Check for existing feedback to prevent duplicates
+        existing_feedback = db.query(Feedback).filter(Feedback.ticket_id == ticket_id).first()
+        if existing_feedback:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail=f"Feedback already exists for ticket {ticket_id}"
+            )
+        
+        # Create feedback record
+        feedback = Feedback(
+            ticket_id=ticket_id,
+            rating=feedback_data.rating,
+            resolved=feedback_data.resolved
+        )
+        
+        # Save to database
+        db.add(feedback)
+        db.commit()
+        db.refresh(feedback)
+        
+        # Compute quality score for the ticket
+        base_score = feedback_data.rating / 5.0
+        resolution_boost = 0.1 if feedback_data.resolved else -0.1
+        ticket.quality_score = max(0.0, min(1.0, base_score + resolution_boost))
+        db.commit()
+        
+        logger.info(f"Feedback created for ticket {ticket_id}: rating={feedback_data.rating}, resolved={feedback_data.resolved}")
+        
+        return FeedbackResponse.model_validate(feedback)
+        
+    except HTTPException:
+        # Re-raise HTTP exceptions (like 404 for missing ticket)
+        raise
+    except Exception as e:
+        db.rollback()
+        logger.exception(f"Failed to create feedback for ticket {ticket_id}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Internal server error occurred while creating feedback"
         ) from e
 
 
