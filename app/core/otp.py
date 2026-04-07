@@ -57,11 +57,17 @@ def send_otp_email(email: str, otp: str) -> bool:
         True if email sent successfully, False otherwise
     """
     try:
-        # Gmail SMTP configuration
+        # Gmail SMTP configuration - UPDATE WITH APP PASSWORD
         smtp_server = "smtp.gmail.com"
         smtp_port = 587
-        sender_email = "kurukuruom@gmail.com"  # Replace with your Gmail
-        sender_password = "pass@1706"   # Replace with your Gmail app password
+        sender_email = "kurukuruom@gmail.com"  # Your Gmail address
+        sender_password = "ller cmgm eznk scxq"   # TODO: REPLACE with Gmail App Password (16-char)
+        
+        # IMPORTANT: Use App Password, not regular password
+        # 1. Enable 2FA on Gmail
+        # 2. Go to: https://myaccount.google.com/apppasswords  
+        # 3. Generate App Password for "Mail"
+        # 4. Use the 16-character App Password here
         
         # Create message
         message = MIMEMultipart()
