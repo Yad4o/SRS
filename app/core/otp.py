@@ -31,7 +31,10 @@ from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
 from datetime import datetime, timedelta
 from typing import Optional
+<<<<<<< HEAD
 import os
+=======
+>>>>>>> 370fec7d7b7f1a1d362fe570a184daca2d77a697
 
 from app.core.config import settings
 
