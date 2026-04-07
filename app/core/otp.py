@@ -60,8 +60,8 @@ def send_otp_email(email: str, otp: str) -> bool:
         # Gmail SMTP configuration
         smtp_server = "smtp.gmail.com"
         smtp_port = 587
-        sender_email = "your-email@gmail.com"  # Replace with your Gmail
-        sender_password = "your-app-password"   # Replace with your Gmail app password
+        sender_email = "kurukuruom@gmail.com"  # Replace with your Gmail
+        sender_password = "pass@1706"   # Replace with your Gmail app password
         
         # Create message
         message = MIMEMultipart()
@@ -112,7 +112,9 @@ def is_otp_expired(expires_at: datetime) -> bool:
     Returns:
         True if expired, False otherwise
     """
-    return datetime.utcnow() > expires_at
+    from datetime import timezone
+    now = datetime.now(timezone.utc)
+    return now > expires_at
 
 
 def validate_otp_format(otp: str) -> bool:
