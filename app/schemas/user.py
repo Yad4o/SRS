@@ -105,6 +105,103 @@ class UserCreate(BaseModel):
         return v
 
 
+class ForgotPasswordRequest(BaseModel):
+    """
+    Schema for forgot password request.
+
+    Used in:
+    --------
+    POST /auth/forgot-password
+
+    Fields:
+    -------
+    - email: User email address to send OTP to
+    """
+
+    email: EmailStr
+
+
+class VerifyOTPRequest(BaseModel):
+    """
+    Schema for OTP verification request.
+
+    Used in:
+    --------
+    POST /auth/verify-otp
+
+    Fields:
+    -------
+    - email: User email address
+    - otp: 6-digit OTP code
+    """
+
+    email: EmailStr
+    otp: str
+
+    @field_validator("otp")
+    @classmethod
+    def validate_otp(cls, v: str) -> str:
+        """
+        Validate OTP format.
+        """
+        if not v.isdigit() or len(v) != 6:
+            raise ValueError("OTP must be a 6-digit number")
+        return v
+
+
+class ResetPasswordRequest(BaseModel):
+    """
+    Schema for password reset request.
+
+    Used in:
+    --------
+    POST /auth/reset-password
+
+    Fields:
+    -------
+    - email: User email address
+    - otp: 6-digit OTP code
+    - new_password: New password to set
+    """
+
+    email: EmailStr
+    otp: str
+    new_password: str
+
+    @field_validator("otp")
+    @classmethod
+    def validate_otp(cls, v: str) -> str:
+        """
+        Validate OTP format.
+        """
+        if not v.isdigit() or len(v) != 6:
+            raise ValueError("OTP must be a 6-digit number")
+        return v
+
+    @field_validator("new_password")
+    @classmethod
+    def password_complexity(cls, v: str) -> str:
+        """
+        Validate password complexity:
+        - Min 8 characters
+        - At least one uppercase letter
+        - At least one lowercase letter
+        - At least one digit
+        - At least one special character
+        """
+        if len(v) < 8:
+            raise ValueError("Password must be at least 8 characters long")
+        if not re.search(r"[A-Z]", v):
+            raise ValueError("Password must contain at least one uppercase letter")
+        if not re.search(r"[a-z]", v):
+            raise ValueError("Password must contain at least one lowercase letter")
+        if not re.search(r"\d", v):
+            raise ValueError("Password must contain at least one digit")
+        if not re.search(r"[!@#$%^&*(),.?\":{}|<>]", v):
+            raise ValueError("Password must contain at least one special character")
+        return v
+
+
 # -------------------------------------------------
 # Response Schemas
 # -------------------------------------------------
@@ -153,3 +250,55 @@ class Token(BaseModel):
 
     access_token: str
     token_type: str = "bearer"
+
+
+class ForgotPasswordResponse(BaseModel):
+    """
+    Schema for forgot password response.
+
+    Used in:
+    --------
+    POST /auth/forgot-password (response)
+
+    Fields:
+    -------
+    - message: Success message indicating OTP was sent
+    - otp_expires_in: Number of minutes until OTP expires
+    """
+
+    message: str
+    otp_expires_in: int
+
+
+class VerifyOTPResponse(BaseModel):
+    """
+    Schema for OTP verification response.
+
+    Used in:
+    --------
+    POST /auth/verify-otp (response)
+
+    Fields:
+    -------
+    - message: Success message indicating OTP is valid
+    - is_valid: Boolean indicating if OTP is valid
+    """
+
+    message: str
+    is_valid: bool
+
+
+class ResetPasswordResponse(BaseModel):
+    """
+    Schema for password reset response.
+
+    Used in:
+    --------
+    POST /auth/reset-password (response)
+
+    Fields:
+    -------
+    - message: Success message indicating password was reset
+    """
+
+    message: str

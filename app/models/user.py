@@ -22,7 +22,8 @@ DO NOT:
 - Write database queries here
 """
 
-from sqlalchemy import Column, Integer, String
+from sqlalchemy import Column, Integer, String, DateTime
+from sqlalchemy.sql import func
 from app.db.session import Base
 
 
@@ -74,6 +75,26 @@ class User(Base):
         default="user",
         nullable=False,
         doc="User role: user | agent | admin",
+    )
+
+    # Password reset fields
+    reset_otp = Column(
+        String(6),
+        nullable=True,
+        doc="6-digit OTP for password reset",
+    )
+
+    reset_otp_expires_at = Column(
+        DateTime(timezone=True),
+        nullable=True,
+        doc="OTP expiration timestamp",
+    )
+
+    reset_otp_attempts = Column(
+        Integer,
+        default=0,
+        nullable=False,
+        doc="Number of OTP verification attempts",
     )
 
     # -------------------------------------------------
