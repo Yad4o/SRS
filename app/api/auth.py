@@ -35,15 +35,21 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.security import OAuth2PasswordBearer
 from sqlalchemy.orm import Session
 from sqlalchemy.exc import IntegrityError, SQLAlchemyError
-from datetime import timedelta
+from datetime import timedelta, datetime
 from typing import Annotated
 from jose import JWTError
 
 from app.core.security import verify_password, create_access_token, hash_password, decode_token, check_password_truncation
 from app.core.config import settings, ALLOWED_ROLES
+from app.core.otp import generate_otp, send_otp_email, log_otp_for_dev, is_otp_expired, get_otp_expiration_time
 from app.db.session import get_db
 from app.models.user import User
-from app.schemas.user import UserLogin, UserCreate, UserResponse, Token
+from app.schemas.user import (
+    UserLogin, UserCreate, UserResponse, Token,
+    ForgotPasswordRequest, ForgotPasswordResponse,
+    VerifyOTPRequest, VerifyOTPResponse,
+    ResetPasswordRequest, ResetPasswordResponse
+)
 
 # OAuth2 scheme for token authentication
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="auth/login")
@@ -60,6 +66,11 @@ EMAIL_ALREADY_REGISTERED = "Email already registered"
 EMAIL_PASSWORD_REQUIRED = "Email and password are required"
 INVALID_DEFAULT_ROLE = "Invalid default role configuration"
 COULD_NOT_VALIDATE_CREDENTIALS = "Could not validate credentials"
+EMAIL_NOT_FOUND = "Email address not found"
+INVALID_OTP = "Invalid or expired OTP"
+OTP_EXPIRED = "OTP has expired"
+MAX_OTP_ATTEMPTS = "Maximum OTP attempts exceeded. Please request a new OTP"
+EMAIL_SEND_FAILED = "Failed to send OTP email. Please try again"
 
 
 def normalize_email(email: str) -> str:
@@ -362,3 +373,274 @@ def get_current_user_info(
         email=current_user.email,
         role=current_user.role
     )
+
+
+@router.post("/forgot-password", response_model=ForgotPasswordResponse)
+def forgot_password(
+    request: ForgotPasswordRequest,
+    db: Annotated[Session, Depends(get_db)]
+):
+    """
+    Send OTP to user's email for password reset.
+    
+    Args:
+        request: ForgotPasswordRequest with user email
+        db: Database session dependency
+        
+    Returns:
+        ForgotPasswordResponse with success message and OTP expiration time
+        
+    Raises:
+        HTTPException: If email not found (404) or email send fails (500)
+    """
+    try:
+        # Normalize email
+        normalized_email = normalize_email(request.email)
+        
+        # Find user by email
+        user = db.query(User).filter(User.email == normalized_email).first()
+        if not user:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=EMAIL_NOT_FOUND
+            )
+        
+        # Generate OTP
+        otp = generate_otp()
+        otp_expires_at = get_otp_expiration_time(10)  # 10 minutes
+        
+        # Update user with OTP
+        user.reset_otp = otp
+        user.reset_otp_expires_at = otp_expires_at
+        user.reset_otp_attempts = 0
+        
+        db.commit()
+        
+        # Send OTP email (or log for development)
+        email_sent = send_otp_email(user.email, otp)
+        if not email_sent:
+            # For development, log the OTP instead of failing
+            log_otp_for_dev(user.email, otp)
+        
+        return ForgotPasswordResponse(
+            message="OTP sent to your email address",
+            otp_expires_in=10
+        )
+        
+    except SQLAlchemyError as e:
+        logger.error(f"Database error in forgot_password: {e}")
+        db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=AUTH_SERVICE_UNAVAILABLE
+        )
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Unexpected error in forgot_password: {e}")
+        db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=AUTH_SERVICE_UNAVAILABLE
+        )
+
+
+@router.post("/verify-otp", response_model=VerifyOTPResponse)
+def verify_otp(
+    request: VerifyOTPRequest,
+    db: Annotated[Session, Depends(get_db)]
+):
+    """
+    Verify OTP for password reset.
+    
+    Args:
+        request: VerifyOTPRequest with email and OTP
+        db: Database session dependency
+        
+    Returns:
+        VerifyOTPResponse with verification result
+        
+    Raises:
+        HTTPException: If OTP is invalid/expired (400) or max attempts exceeded (429)
+    """
+    try:
+        # Normalize email
+        normalized_email = normalize_email(request.email)
+        
+        # Find user by email
+        user = db.query(User).filter(User.email == normalized_email).first()
+        if not user:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=EMAIL_NOT_FOUND
+            )
+        
+        # Check if user has OTP
+        if not user.reset_otp or not user.reset_otp_expires_at:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=INVALID_OTP
+            )
+        
+        # Check if OTP is expired
+        if is_otp_expired(user.reset_otp_expires_at):
+            # Clear expired OTP
+            user.reset_otp = None
+            user.reset_otp_expires_at = None
+            user.reset_otp_attempts = 0
+            db.commit()
+            
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=OTP_EXPIRED
+            )
+        
+        # Check max attempts (3 attempts allowed)
+        if user.reset_otp_attempts >= 3:
+            raise HTTPException(
+                status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+                detail=MAX_OTP_ATTEMPTS
+            )
+        
+        # Verify OTP
+        if user.reset_otp != request.otp:
+            # Increment attempts
+            user.reset_otp_attempts += 1
+            db.commit()
+            
+            remaining_attempts = 3 - user.reset_otp_attempts
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Invalid OTP. {remaining_attempts} attempts remaining"
+            )
+        
+        # OTP is valid - reset attempts
+        user.reset_otp_attempts = 0
+        db.commit()
+        
+        return VerifyOTPResponse(
+            message="OTP verified successfully",
+            is_valid=True
+        )
+        
+    except SQLAlchemyError as e:
+        logger.error(f"Database error in verify_otp: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=AUTH_SERVICE_UNAVAILABLE
+        )
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Unexpected error in verify_otp: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=AUTH_SERVICE_UNAVAILABLE
+        )
+
+
+@router.post("/reset-password", response_model=ResetPasswordResponse)
+def reset_password(
+    request: ResetPasswordRequest,
+    db: Annotated[Session, Depends(get_db)]
+):
+    """
+    Reset user password using OTP.
+    
+    Args:
+        request: ResetPasswordRequest with email, OTP, and new password
+        db: Database session dependency
+        
+    Returns:
+        ResetPasswordResponse with success message
+        
+    Raises:
+        HTTPException: If OTP is invalid/expired (400) or max attempts exceeded (429)
+    """
+    try:
+        # Normalize email
+        normalized_email = normalize_email(request.email)
+        
+        # Find user by email
+        user = db.query(User).filter(User.email == normalized_email).first()
+        if not user:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=EMAIL_NOT_FOUND
+            )
+        
+        # Check if user has OTP
+        if not user.reset_otp or not user.reset_otp_expires_at:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=INVALID_OTP
+            )
+        
+        # Check if OTP is expired
+        if is_otp_expired(user.reset_otp_expires_at):
+            # Clear expired OTP
+            user.reset_otp = None
+            user.reset_otp_expires_at = None
+            user.reset_otp_attempts = 0
+            db.commit()
+            
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=OTP_EXPIRED
+            )
+        
+        # Check max attempts
+        if user.reset_otp_attempts >= 3:
+            raise HTTPException(
+                status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+                detail=MAX_OTP_ATTEMPTS
+            )
+        
+        # Verify OTP
+        if user.reset_otp != request.otp:
+            # Increment attempts
+            user.reset_otp_attempts += 1
+            db.commit()
+            
+            remaining_attempts = 3 - user.reset_otp_attempts
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Invalid OTP. {remaining_attempts} attempts remaining"
+            )
+        
+        # Check password truncation
+        truncation_info = check_password_truncation(request.new_password)
+        if truncation_info["would_be_truncated"]:
+            logger.info("New password will be truncated to fit bcrypt limit")
+        
+        # Hash new password
+        new_hashed_password = hash_password(request.new_password)
+        
+        # Update password and clear OTP
+        user.hashed_password = new_hashed_password
+        user.reset_otp = None
+        user.reset_otp_expires_at = None
+        user.reset_otp_attempts = 0
+        
+        db.commit()
+        
+        return ResetPasswordResponse(
+            message="Password reset successfully"
+        )
+        
+    except SQLAlchemyError as e:
+        logger.error(f"Database error in reset_password: {e}")
+        db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=AUTH_SERVICE_UNAVAILABLE
+        )
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Unexpected error in reset_password: {e}")
+        db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=AUTH_SERVICE_UNAVAILABLE
+        )
