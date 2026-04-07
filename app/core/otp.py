@@ -152,7 +152,8 @@ def get_otp_expiration_time(minutes: int = 10) -> datetime:
     Returns:
         Datetime when OTP should expire
     """
-    return datetime.utcnow() + timedelta(minutes=minutes)
+    from datetime import timezone
+    return datetime.now(timezone.utc) + timedelta(minutes=minutes)
 
 
 # For development/testing - log OTP instead of sending email
