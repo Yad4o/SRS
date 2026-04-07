@@ -64,13 +64,16 @@ def send_otp_email(email: str, otp: str) -> bool:
         sender_email = os.getenv("GMAIL_EMAIL")
         sender_password = os.getenv("GMAIL_APP_PASSWORD")
         
-        # Check if environment variables are set
-        if not sender_email or not sender_password or sender_email == "your-email@gmail.com" or sender_password == "your-app-password":
-            print("⚠️  EMAIL NOT CONFIGURED: Set environment variables")
+        # Check if environment variables are properly configured
+        if (not sender_email or not sender_password or 
+           sender_email == "your-email@gmail.com" or 
+           sender_password == "your-16-character-app-password" or
+           ("example" in sender_email.lower() if sender_email else False)):
+            print("⚠️  EMAIL NOT CONFIGURED: Using development fallback")
             print("   GMAIL_EMAIL=your-email@gmail.com")
             print("   GMAIL_APP_PASSWORD=your-16-char-app-password")
             print("📧 For Gmail: Enable 2FA and generate an App Password")
-            return False
+            return False  # This will trigger log_otp_for_dev fallback
         
         # Create message
         message = MIMEMultipart()
@@ -108,6 +111,7 @@ def send_otp_email(email: str, otp: str) -> bool:
         
     except Exception as e:
         print(f"Error sending email: {e}")
+        # Return False instead of raising exception to allow fallback
         return False
 
 
