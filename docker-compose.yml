@@ -43,6 +43,9 @@ services:
       - SECRET_KEY=your-secret-key-change-in-production
       - OPENAI_API_KEY=your-openai-key
       - ENVIRONMENT=production
+      # Gmail Configuration for OTP emails
+      - GMAIL_EMAIL=${GMAIL_EMAIL:-your-email@gmail.com}
+      - GMAIL_APP_PASSWORD=${GMAIL_APP_PASSWORD:-your-app-password}
     depends_on:
       db:
         condition: service_healthy
