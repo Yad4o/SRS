@@ -97,11 +97,14 @@ def create_app() -> FastAPI:
     # --------------------------------------------------
 
     # CORS Middleware
-    # TODO (production): restrict allowed origins to specific domains
-    # TODO (production): allow only required headers
+    # Production configuration for Vercel frontend
     app.add_middleware(
         CORSMiddleware,
-        allow_origins=["*"],  # TODO: restrict in production
+        allow_origins=[
+            "https://srs-frontend-rho.vercel.app",
+            "http://localhost:3000",  # Local development
+            "http://localhost:5173",  # Vite dev server
+        ],
         allow_credentials=True,
         allow_methods=["*"],
         allow_headers=["*"],
