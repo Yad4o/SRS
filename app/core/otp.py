@@ -12,7 +12,7 @@ Om (Backend / Security)
 Responsibilities:
 -----------------
 - Generate secure 6-digit OTPs
-- Send OTP emails using Gmail SMTP
+- Send OTP emails using Resend API
 - Validate OTP format and expiration
 - Handle OTP-related security measures
 
@@ -26,12 +26,11 @@ DO NOT:
 
 import random
 import string
-import smtplib
-from email.mime.text import MIMEText
-from email.mime.multipart import MIMEMultipart
 from datetime import datetime, timedelta
 from typing import Optional
 import os
+
+import resend
 
 from app.core.config import settings
 
@@ -48,7 +47,7 @@ def generate_otp() -> str:
 
 def send_otp_email(email: str, otp: str) -> bool:
     """
-    Send OTP to user's email address using Gmail SMTP.
+    Send OTP to user's email address using Resend API.
     
     Args:
         email: Recipient email address
@@ -58,60 +57,23 @@ def send_otp_email(email: str, otp: str) -> bool:
         True if email sent successfully, False otherwise
     """
     try:
-        # Gmail SMTP configuration - USE ENVIRONMENT VARIABLES
-        smtp_server = "smtp.gmail.com"
-        smtp_port = 587
-        sender_email = os.getenv("GMAIL_EMAIL")
-        sender_password = os.getenv("GMAIL_APP_PASSWORD")
+        resend.api_key = os.getenv("RESEND_API_KEY")
         
-        # Check if environment variables are properly configured
-        if (not sender_email or not sender_password or 
-           sender_email == "your-email@gmail.com" or 
-           sender_password == "your-16-character-app-password" or
-           ("example" in sender_email.lower() if sender_email else False)):
-            print("⚠️  EMAIL NOT CONFIGURED: Using development fallback")
-            print("   GMAIL_EMAIL=your-email@gmail.com")
-            print("   GMAIL_APP_PASSWORD=your-16-char-app-password")
-            print("📧 For Gmail: Enable 2FA and generate an App Password")
+        if not resend.api_key:
+            print("⚠️  RESEND_API_KEY not configured: Using development fallback")
+            print("   Set RESEND_API_KEY environment variable")
             return False  # This will trigger log_otp_for_dev fallback
         
-        # Create message
-        message = MIMEMultipart()
-        message["From"] = sender_email
-        message["To"] = email
-        message["Subject"] = "Password Reset OTP - SRS Support"
-        
-        # Email body
-        body = f"""
-        Hello,
-        
-        You requested a password reset for your SRS Support account.
-        
-        Your OTP code is: {otp}
-        
-        This OTP will expire in 10 minutes.
-        
-        If you didn't request this password reset, please ignore this email.
-        
-        Thanks,
-        SRS Support Team
-        """
-        
-        message.attach(MIMEText(body, "plain"))
-        
-        # Send email
-        server = smtplib.SMTP(smtp_server, smtp_port)
-        server.starttls()
-        server.login(sender_email, sender_password)
-        text = message.as_string()
-        server.sendmail(sender_email, email, text)
-        server.quit()
-        
+        resend.Emails.send({
+            "from": "onboarding@resend.dev",
+            "to": email,
+            "subject": "Your SRS OTP Code",
+            "html": f"<p>Your OTP is: <strong>{otp}</strong>. It expires in 10 minutes.</p>"
+        })
         return True
         
     except Exception as e:
         print(f"Error sending email: {e}")
-        # Return False instead of raising exception to allow fallback
         return False
 
 
