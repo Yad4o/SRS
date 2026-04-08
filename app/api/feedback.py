@@ -74,16 +74,17 @@ def create_feedback_record(db: Session, ticket_id: int, rating: int, resolved: b
         resolved=resolved
     )
     
-    # Save to database
+    # Ensure atomic transaction for both feedback and ticket updates
     db.add(feedback)
-    db.commit()
-    db.refresh(feedback)
     
     # Compute quality score for the ticket
     base_score = rating / 5.0
     resolution_boost = 0.1 if resolved else -0.1
     ticket.quality_score = max(0.0, min(1.0, base_score + resolution_boost))
+    
+    # Commit both operations together
     db.commit()
+    db.refresh(feedback)
     
     logger.info(f"Feedback created for ticket {ticket_id}: rating={rating}, resolved={resolved}")
     return feedback
