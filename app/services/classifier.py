@@ -1,7 +1,4 @@
 import re
-from typing import Dict, Optional
-
-
 def _boundary_match(keyword: str, text: str) -> bool:
     """
     Check if keyword appears as a whole word/phrase in text (boundary-aware matching).
@@ -26,7 +23,7 @@ def _boundary_match(keyword: str, text: str) -> bool:
     return bool(re.search(pattern, text, re.IGNORECASE))
 
 
-def classify_intent(message: str) -> Dict:
+def classify_intent(message: str) -> dict[str, str | float | None]:
     """
     Classify user intent using rule-based keyword matching.
     
@@ -40,7 +37,7 @@ def classify_intent(message: str) -> Dict:
         dict: {
             "intent": str,
             "confidence": float (0.0-1.0),
-            "sub_intent": Optional[str]
+            "sub_intent": str | None
         }
     """
 
@@ -253,7 +250,7 @@ def classify_intent(message: str) -> Dict:
         ],
     }
 
-    sub_intent: Optional[str] = None
+    sub_intent: str | None = None
     if best_match:
         for sub_intent_name, keywords in sub_intent_patterns.get(best_match, []):
             if any(kw in text for kw in keywords):

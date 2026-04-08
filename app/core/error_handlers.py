@@ -25,7 +25,7 @@ DO NOT:
 
 import logging
 import traceback
-from typing import Dict, Any, Optional
+from typing import Any
 from fastapi import Request, HTTPException
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
@@ -48,7 +48,7 @@ from app.core.exceptions import (
 logger = logging.getLogger(__name__)
 
 
-def _sanitize_error_details(error_details: Optional[Dict[str, Any]]) -> str:
+def _sanitize_error_details(error_details: dict[str, Any] | None) -> str:
     """
     Sanitize error details for safe logging.
     
@@ -264,9 +264,9 @@ def setup_exception_handlers(app) -> None:
 
 def handle_ai_service_failure(
     operation: str,
-    fallback_data: Dict[str, Any],
-    error_details: Optional[Dict[str, Any]] = None
-) -> Dict[str, Any]:
+    fallback_data: dict[str, Any],
+    error_details: dict[str, Any] | None = None
+) -> dict[str, Any]:
     """
     Handle AI service failures with fallback response.
     

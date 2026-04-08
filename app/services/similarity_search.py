@@ -1,6 +1,6 @@
 import json
 import math
-from typing import Dict, List, Optional
+
 from app.utils.text_processing import tokenize, compute_idf, tf_idf_vector
 from app.core.config import settings
 from app.models.ticket import Ticket
@@ -53,7 +53,7 @@ def _cache_key(message: str) -> str:
 
 
 
-def _cosine_similarity(tfidf1: Dict[str, float], tfidf2: Dict[str, float]) -> float:
+def _cosine_similarity(tfidf1: dict[str, float], tfidf2: dict[str, float]) -> float:
     """
     Calculate cosine similarity between two TF-IDF vectors.
     
@@ -84,7 +84,7 @@ def _cosine_similarity(tfidf1: Dict[str, float], tfidf2: Dict[str, float]) -> fl
     return dot_product / (magnitude1 * magnitude2)
 
 
-def get_resolved_tickets(db: Session) -> List[Ticket]:
+def get_resolved_tickets(db: Session) -> list[Ticket]:
     """Fetch recent successfully resolved tickets for similarity search."""
     return (
         db.query(Ticket)
@@ -98,7 +98,7 @@ def get_resolved_tickets(db: Session) -> List[Ticket]:
     )
 
 
-def find_similar_ticket(new_message: str, resolved_tickets: List[Dict], similarity_threshold: float = None) -> Optional[Dict]:
+def find_similar_ticket(new_message: str, resolved_tickets: list[dict], similarity_threshold: float = None) -> dict | None:
     """
     Find the most similar resolved ticket to a new ticket message.
     

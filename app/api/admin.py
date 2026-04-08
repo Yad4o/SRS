@@ -24,7 +24,7 @@ DO NOT:
 - Allow non-admin access
 """
 
-from typing import Optional, Dict, Any
+from typing import Any
 from fastapi import APIRouter, Depends, HTTPException, status, Query
 from sqlalchemy.orm import Session
 from sqlalchemy import func, Integer
@@ -68,7 +68,7 @@ def require_admin(current_user: User = Depends(get_current_user)) -> User:
     return current_user
 
 
-@router.get("/metrics", response_model=Dict[str, Any])
+@router.get("/metrics", response_model=dict[str, Any])
 def get_metrics(
     current_user: User = Depends(require_admin),
     db: Session = Depends(get_db)
@@ -181,11 +181,11 @@ def get_metrics(
         raise InternalError("Failed to retrieve metrics") from e
 
 
-@router.get("/tickets", response_model=Dict[str, Any])
+@router.get("/tickets", response_model=dict[str, Any])
 def list_all_tickets(
     current_user: User = Depends(require_admin),
     db: Session = Depends(get_db),
-    status_filter: Optional[str] = Query(None, alias="status", description="Filter by ticket status"),
+    status_filter: str | None = Query(None, alias="status", description="Filter by ticket status"),
     page: int = Query(1, ge=1, description="Page number"),
     limit: int = Query(50, ge=1, le=100, description="Items per page")
 ):

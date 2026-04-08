@@ -10,7 +10,7 @@ import logging
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
-from typing import List, Dict, Any
+from typing import Any
 
 from app.db.session import get_db
 from app.models.user import User
@@ -23,7 +23,7 @@ logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/demo", tags=["Demo"])
 
 
-@router.get("/tables", response_model=Dict[str, Any])
+@router.get("/tables", response_model=dict[str, Any])
 def get_table_info(db: Session = Depends(get_db)):
     """Get overview of all tables and record counts."""
     try:
@@ -49,7 +49,7 @@ def get_table_info(db: Session = Depends(get_db)):
         raise HTTPException(status_code=500, detail="Database error")
 
 
-@router.get("/users", response_model=List[Dict[str, Any]])
+@router.get("/users", response_model=list[dict[str, Any]])
 def get_users(db: Session = Depends(get_db)):
     """Get all users with their details."""
     try:
@@ -67,7 +67,7 @@ def get_users(db: Session = Depends(get_db)):
         raise HTTPException(status_code=500, detail="Database error")
 
 
-@router.get("/tickets", response_model=List[Dict[str, Any]])
+@router.get("/tickets", response_model=list[dict[str, Any]])
 def get_tickets(db: Session = Depends(get_db)):
     """Get all tickets with AI classification details."""
     try:
@@ -88,7 +88,7 @@ def get_tickets(db: Session = Depends(get_db)):
         raise HTTPException(status_code=500, detail="Database error")
 
 
-@router.get("/feedback", response_model=List[Dict[str, Any]])
+@router.get("/feedback", response_model=list[dict[str, Any]])
 def get_feedback(db: Session = Depends(get_db)):
     """Get all feedback with ticket relationships."""
     try:
@@ -108,7 +108,7 @@ def get_feedback(db: Session = Depends(get_db)):
         raise HTTPException(status_code=500, detail="Database error")
 
 
-@router.get("/analytics", response_model=Dict[str, Any])
+@router.get("/analytics", response_model=dict[str, Any])
 def get_analytics(db: Session = Depends(get_db)):
     """Get business intelligence analytics from demo data."""
     try:
@@ -140,7 +140,7 @@ def get_analytics(db: Session = Depends(get_db)):
         raise HTTPException(status_code=500, detail="Database error")
 
 
-@router.get("/relationships", response_model=List[Dict[str, Any]])
+@router.get("/relationships", response_model=list[dict[str, Any]])
 def get_feedback_with_tickets(db: Session = Depends(get_db)):
     """Get feedback with associated ticket details (shows relationships)."""
     try:
@@ -173,7 +173,7 @@ def get_feedback_with_tickets(db: Session = Depends(get_db)):
         raise HTTPException(status_code=500, detail="Database error")
 
 
-@router.get("/summary", response_model=Dict[str, Any])
+@router.get("/summary", response_model=dict[str, Any])
 def get_demo_summary(include_rows: bool = False, db: Session = Depends(get_db)):
     """Get demo data summary.
 
@@ -182,7 +182,7 @@ def get_demo_summary(include_rows: bool = False, db: Session = Depends(get_db)):
                       Defaults to False to keep the response payload bounded.
     """
     try:
-        summary: Dict[str, Any] = {
+        summary: dict[str, Any] = {
             "database_info": get_table_info(db),
             "analytics": get_analytics(db),
             "relationships": get_feedback_with_tickets(db),

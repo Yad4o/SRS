@@ -23,7 +23,7 @@ import logging
 import re
 from datetime import datetime, date
 from decimal import Decimal
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 from sqlalchemy.orm import Session
 
@@ -72,7 +72,7 @@ class ResponseFormatter:
     """Common response formatting utilities."""
     
     @staticmethod
-    def success_response(data: Any = None, message: str = "Operation successful") -> Dict[str, Any]:
+    def success_response(data: Any = None, message: str = "Operation successful") -> dict[str, Any]:
         """Format a successful response."""
         response = {"success": True, "message": message}
         if data is not None:
@@ -80,7 +80,7 @@ class ResponseFormatter:
         return response
     
     @staticmethod
-    def error_response(message: str, code: str = "ERROR", details: Any = None) -> Dict[str, Any]:
+    def error_response(message: str, code: str = "ERROR", details: Any = None) -> dict[str, Any]:
         """Format an error response."""
         response = {"success": False, "error": {"code": code, "message": message}}
         if details is not None:
@@ -88,7 +88,7 @@ class ResponseFormatter:
         return response
     
     @staticmethod
-    def paginated_response(items: List[Any], total: int, page: int = 1, limit: int = 50) -> Dict[str, Any]:
+    def paginated_response(items: list[Any], total: int, page: int = 1, limit: int = 50) -> dict[str, Any]:
         """Format a paginated response."""
         return {
             "items": items,
@@ -111,7 +111,7 @@ class ValidationHelper:
         return bool(re.match(pattern, email))
     
     @staticmethod
-    def sanitize_string(text: str, max_length: Optional[int] = None) -> str:
+    def sanitize_string(text: str, max_length: int | None = None) -> str:
         """Sanitize string input."""
         if not isinstance(text, str):
             text = str(text)
@@ -169,7 +169,7 @@ class ErrorHelper:
         raise error
     
     @staticmethod
-    def handle_database_error(error: Exception, operation: str) -> Dict[str, Any]:
+    def handle_database_error(error: Exception, operation: str) -> dict[str, Any]:
         """Handle database errors consistently."""
         logger.error(f"Database error during {operation}: {error}")
         return ResponseFormatter.error_response(
@@ -179,7 +179,7 @@ class ErrorHelper:
         )
     
     @staticmethod
-    def handle_validation_error(errors: List[str]) -> Dict[str, Any]:
+    def handle_validation_error(errors: list[str]) -> dict[str, Any]:
         """Handle validation errors consistently."""
         return ResponseFormatter.error_response(
             message="Validation failed",
@@ -192,7 +192,7 @@ class MetricsHelper:
     """Common metrics and logging utilities."""
     
     @staticmethod
-    def log_operation(operation: str, user_id: Optional[str] = None, **kwargs):
+    def log_operation(operation: str, user_id: str | None = None, **kwargs):
         """Log an operation with optional user context."""
         log_data = {"operation": operation, "timestamp": datetime.utcnow().isoformat()}
         if user_id:

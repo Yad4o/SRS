@@ -22,7 +22,7 @@ DO NOT:
 - Access external APIs directly here
 """
 
-from typing import List, Optional
+
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 from fastapi.security import OAuth2PasswordBearer
 from sqlalchemy import update
@@ -163,7 +163,7 @@ def create_ticket(
     request: Request,
     ticket_data: TicketCreate,
     db: Session = Depends(get_db),
-    token: Optional[str] = Depends(oauth2_scheme_optional),
+    token: str | None = Depends(oauth2_scheme_optional),
 ) -> TicketResponse:
     """
     Create a new support ticket with AI automation.
@@ -251,7 +251,7 @@ def create_ticket(
 
 @router.get("/", response_model=TicketList)
 def list_tickets(
-    ticket_status: Optional[str] = Query(
+    ticket_status: str | None = Query(
         None,
         description="Filter tickets by status (open, auto_resolved, escalated, closed)",
         alias="status"
@@ -259,7 +259,7 @@ def list_tickets(
     limit: int = Query(50, ge=1, le=100),
     offset: int = Query(0, ge=0),
     db: Session = Depends(get_db),
-    token: Optional[str] = Depends(oauth2_scheme_optional),
+    token: str | None = Depends(oauth2_scheme_optional),
 ) -> TicketList:
     """
     List all tickets with optional status filtering.

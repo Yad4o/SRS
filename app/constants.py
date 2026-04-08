@@ -18,7 +18,7 @@ Responsibilities:
 """
 
 from enum import Enum
-from typing import Dict, Any
+
 
 # Ticket statuses
 class TicketStatus(str, Enum):
