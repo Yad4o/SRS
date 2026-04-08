@@ -2,38 +2,25 @@
 
 ## 🎯 Overview
 
-The SRS system now supports role selection during user registration! Users can register with different roles instead of automatically defaulting to "user".
+Complete guide for role-based user registration in the SRS system. Users can register with different roles instead of automatically defaulting to "user".
+
+> **📖 For frontend implementation details, see [FRONTEND_ROLE_GUIDE.md](./FRONTEND_ROLE_GUIDE.md)**
+
+---
 
 ## 📋 Available Roles
 
-### 👤 **user** (Default)
-- **Purpose**: Regular customers
-- **Privileges**: 
-  - Create tickets
-  - View own tickets only
-  - Submit feedback on resolved tickets
+| Role | Icon | Description | Permissions |
+|------|------|-------------|--------------|
+| **user** | 👤 | Regular customers | Create/view own tickets, submit feedback |
+| **agent** | 🎧 | Support agents | All user privileges + assign/close escalated tickets |
+| **admin** | 👑 | System administrators | Full system access |
 
-### 🎧 **agent** 
-- **Purpose**: Support agents
-- **Privileges**:
-  - All user privileges
-  - Assign escalated tickets to themselves
-  - Close escalated tickets
-  - View all tickets (not just their own)
+---
 
-### 👑 **admin**
-- **Purpose**: System administrators  
-- **Privileges**:
-  - All agent privileges
-  - Access system metrics and statistics
-  - Admin-only endpoints
-  - Full system access
+## 🚀 API Registration Examples
 
-## 🚀 How to Register with Different Roles
-
-### Method 1: API Registration
-
-#### Register as Regular User (Default)
+### Register as Regular User (Default)
 ```bash
 curl -X POST "http://127.0.0.1:8000/auth/register" \
   -H "Content-Type: application/json" \
@@ -43,7 +30,7 @@ curl -X POST "http://127.0.0.1:8000/auth/register" \
   }'
 ```
 
-#### Register as Agent
+### Register as Agent
 ```bash
 curl -X POST "http://127.0.0.1:8000/auth/register" \
   -H "Content-Type: application/json" \
@@ -54,7 +41,7 @@ curl -X POST "http://127.0.0.1:8000/auth/register" \
   }'
 ```
 
-#### Register as Admin
+### Register as Admin
 ```bash
 curl -X POST "http://127.0.0.1:8000/auth/register" \
   -H "Content-Type: application/json" \
@@ -65,37 +52,16 @@ curl -X POST "http://127.0.0.1:8000/auth/register" \
   }'
 ```
 
-### Method 2: Frontend Registration
-
-Your frontend can now include a role selection field:
-
-```javascript
-const registrationData = {
-  email: "user@example.com",
-  password: "SecurePass123!",
-  role: "agent"  // or "user", or "admin"
-};
-
-fetch('/auth/register', {
-  method: 'POST',
-  headers: {
-    'Content-Type': 'application/json'
-  },
-  body: JSON.stringify(registrationData)
-})
-.then(response => response.json())
-.then(data => console.log('Registered:', data));
-```
+---
 
 ## ✅ Validation & Security
 
 ### Role Validation
-- Only allowed roles are accepted: `user`, `agent`, `admin`
+- Only allowed roles: `user`, `agent`, `admin`
 - Invalid roles are rejected with clear error messages
 - Default role is `user` if not specified
 
 ### Password Requirements
-All registrations must meet password complexity requirements:
 - Minimum 8 characters
 - At least one uppercase letter
 - At least one lowercase letter  
@@ -107,7 +73,9 @@ All registrations must meet password complexity requirements:
 - Emails normalized to lowercase
 - Duplicate emails rejected
 
-## 🧪 Testing Examples
+---
+
+## 🧪 Testing
 
 ### Test Agent Registration
 ```python
@@ -140,22 +108,26 @@ if response.status_code == 200:
     print(f"Can assign tickets: {assign_response.status_code != 403}")
 ```
 
+---
+
 ## 🔧 Implementation Details
 
 ### Schema Changes
-- `UserCreate` schema now includes optional `role` field
+- `UserCreate` schema includes optional `role` field
 - Role validation ensures only allowed roles are accepted
 - Default role fallback to "user" for backward compatibility
 
 ### API Changes
-- Registration endpoint now accepts role in request body
+- Registration endpoint accepts role in request body
 - Role is validated against `ALLOWED_ROLES` configuration
-- Maintains backward compatibility - existing code still works
+- Maintains backward compatibility
 
 ### Database Impact
 - No database schema changes needed
 - Role field already existed in users table
-- Simply using the role from request instead of hardcoded default
+- Simply uses role from request instead of hardcoded default
+
+---
 
 ## 📝 Example Responses
 
@@ -188,6 +160,8 @@ if response.status_code == 200:
 }
 ```
 
+---
+
 ## 🔄 Backward Compatibility
 
 ✅ **Fully Backward Compatible**
@@ -195,9 +169,11 @@ if response.status_code == 200:
 - Default role is still "user" when role not specified
 - No breaking changes to existing API
 
+---
+
 ## 🎯 Use Cases
 
-### Customer Support Team
+### Customer Support Team Setup
 ```bash
 # Register multiple agents
 for agent in agent1@company.com agent2@company.com; do
@@ -207,13 +183,21 @@ for agent in agent1@company.com agent2@company.com; do
 done
 ```
 
-### System Setup
+### System Administrator Setup
 ```bash
 # Register admin during initial setup
 curl -X POST "http://127.0.0.1:8000/auth/register" \
   -H "Content-Type: application/json" \
   -d '{"email":"admin@company.com","password":"SecureAdmin123!","role":"admin"}'
 ```
+
+---
+
+## 🔗 Related Documentation
+
+- **[FRONTEND_ROLE_GUIDE.md](./FRONTEND_ROLE_GUIDE.md)** - Frontend implementation details
+- **[ADMIN_SETUP.md](./ADMIN_SETUP.md)** - Admin account configuration
+- **[../specification/TECHNICAL_SPEC.md](../specification/TECHNICAL_SPEC.md)** - Complete API documentation
 
 ---
 
