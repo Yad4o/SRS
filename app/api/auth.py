@@ -36,7 +36,7 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.security import OAuth2PasswordBearer
 from sqlalchemy.orm import Session
 from sqlalchemy.exc import IntegrityError, SQLAlchemyError
-from datetime import timedelta, datetime
+from datetime import timedelta
 from typing import Annotated
 from jose import JWTError
 

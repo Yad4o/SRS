@@ -24,7 +24,7 @@ DO NOT:
 """
 
 import logging
-import traceback
+
 from typing import Any
 from fastapi import Request, HTTPException
 from fastapi.exceptions import RequestValidationError
@@ -188,9 +188,8 @@ async def general_exception_handler(request: Request, exc: Exception) -> JSONRes
         JSONResponse with generic error message
     """
     # Log the full exception for debugging
-    logger.error(
-        f"Unhandled exception in {request.method} {request.url.path}: {type(exc).__name__}: {exc!s}\n"
-        f"Traceback: {traceback.format_exc()}"
+    logger.exception(
+        f"Unhandled exception in {request.method} {request.url.path}: {type(exc).__name__}: {exc!s}"
     )
     
     # Return generic internal error to client
