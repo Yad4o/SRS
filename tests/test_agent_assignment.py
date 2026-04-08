@@ -13,8 +13,8 @@ with SQLite default journal mode.
 
 Error shape
 -----------
-FastAPI returns HTTP errors as {"detail": "..."}, not {"error": {"message": "..."}}.
-All assertions match against response.json()["detail"].
+API errors are returned with the shape {"error": {"message": "..."}}.
+All assertions match against response.json()["error"]["message"].
 """
 import pytest
 from fastapi.testclient import TestClient
@@ -140,8 +140,8 @@ def test_regular_user_gets_403_when_assigning_ticket(client_with_temp_db):
     )
 
     assert response.status_code == 403
-    # FastAPI default HTTPException shape: {"detail": "..."}
-    assert "Access denied" in response.json()["detail"]
+    # FastAPI default HTTPException shape (now overridden): {"error": {"message": "..."}}
+    assert "Access denied" in response.json()["error"]["message"]
 
 
 def test_assign_non_escalated_ticket_returns_409(client_with_temp_db):
@@ -180,7 +180,7 @@ def test_assign_non_escalated_ticket_returns_409(client_with_temp_db):
     )
 
     assert response.status_code == 409
-    assert "status" in response.json()["detail"].lower() or "assign" in response.json()["detail"].lower()
+    assert "status" in response.json()["error"]["message"].lower() or "assign" in response.json()["error"]["message"].lower()
 
 
 def test_assign_already_assigned_ticket_returns_409(client_with_temp_db):
@@ -213,7 +213,7 @@ def test_assign_already_assigned_ticket_returns_409(client_with_temp_db):
     )
 
     assert response.status_code == 409
-    assert "already assigned" in response.json()["detail"].lower()
+    assert "already assigned" in response.json()["error"]["message"].lower()
 
 
 def test_assign_idempotent_for_same_agent(client_with_temp_db):
@@ -365,4 +365,4 @@ def test_regular_user_gets_403_when_closing_ticket(client_with_temp_db):
     )
 
     assert response.status_code == 403
-    assert "Access denied" in response.json()["detail"]
+    assert "Access denied" in response.json()["error"]["message"]

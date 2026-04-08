@@ -106,3 +106,4 @@ class TicketList(BaseModel):
     """
 
     tickets: List[TicketResponse]
+    total: int = 0

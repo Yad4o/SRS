@@ -32,6 +32,7 @@ from app.schemas.feedback import FeedbackCreate, FeedbackResponse
 from app.db.session import get_db
 from app.models.feedback import Feedback
 from app.models.ticket import Ticket
+from app.services.feedback_service import create_feedback_record
 
 # Configure logging
 logger = logging.getLogger(__name__)
@@ -40,6 +41,7 @@ router = APIRouter(
     prefix="/feedback",
     tags=["Feedback"]
 )
+
 
 
 @router.post("/", status_code=status.HTTP_201_CREATED, response_model=FeedbackResponse)
@@ -68,49 +70,12 @@ def create_feedback(
         HTTPException: If ticket not found or database operation fails
     """
     try:
-        # Validate that ticket exists
-        ticket = db.query(Ticket).filter(Ticket.id == feedback_data.ticket_id).first()
-        if not ticket:
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail=f"Ticket with ID {feedback_data.ticket_id} not found"
-            )
-        
-        # Check if ticket is in resolved state
-        if ticket.status not in ["auto_resolved", "closed"]:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail=f"Ticket {feedback_data.ticket_id} is not resolved (current status: {ticket.status})"
-            )
-        
-        # Check for existing feedback to prevent duplicates
-        existing_feedback = db.query(Feedback).filter(Feedback.ticket_id == feedback_data.ticket_id).first()
-        if existing_feedback:
-            raise HTTPException(
-                status_code=status.HTTP_409_CONFLICT,
-                detail=f"Feedback already exists for ticket {feedback_data.ticket_id}"
-            )
-        
-        # Create feedback record
-        feedback = Feedback(
+        feedback = create_feedback_record(
+            db=db,
             ticket_id=feedback_data.ticket_id,
             rating=feedback_data.rating,
             resolved=feedback_data.resolved
         )
-        
-        # Save to database
-        db.add(feedback)
-        db.commit()
-        db.refresh(feedback)
-        
-        # Compute quality score for the ticket
-        base_score = feedback_data.rating / 5.0
-        resolution_boost = 0.1 if feedback_data.resolved else -0.1
-        ticket.quality_score = max(0.0, min(1.0, base_score + resolution_boost))
-        db.commit()
-        
-        logger.info(f"Feedback created for ticket {feedback_data.ticket_id}: rating={feedback_data.rating}, resolved={feedback_data.resolved}")
-        
         return FeedbackResponse.model_validate(feedback)
         
     except HTTPException:
@@ -118,7 +83,10 @@ def create_feedback(
         raise
     except IntegrityError as e:
         db.rollback()
+        # This IntegrityError handler is effectively a defensive backup for a concurrent-insert race 
+        # condition because create_feedback_record already pre-checks for existing feedback
         if "UNIQUE constraint failed" in str(e) or "duplicate key" in str(e).lower():
+            logger.exception(f"Concurrent insert race detected: {str(e)}")
             raise HTTPException(
                 status_code=status.HTTP_409_CONFLICT,
                 detail=f"Feedback already exists for ticket {feedback_data.ticket_id}"

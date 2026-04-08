@@ -178,10 +178,10 @@ class TestListTickets:
 
     def test_list_tickets_filter_by_invalid_status(self):
         """Test listing tickets filtered by invalid status."""
+        response = client.get("/tickets/?status=invalid_status")
         assert response.status_code == 200
         data = response.json()
-        assert len(data["tickets"]) == 1
-        assert data["tickets"][0]["status"] == "auto_resolved"
+        assert len(data["tickets"]) == 0
 
     def test_list_tickets_multiple_tickets(self, db):
         """Test listing multiple tickets with pagination."""
