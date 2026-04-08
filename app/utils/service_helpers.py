@@ -17,10 +17,15 @@ Responsibilities:
 - Response formatting
 """
 
-from typing import Dict, Any, Optional, List
-from sqlalchemy.orm import Session
-from datetime import datetime
+import hashlib
+import json
 import logging
+import re
+from datetime import datetime, date
+from decimal import Decimal
+from typing import Any, Dict, List, Optional
+
+from sqlalchemy.orm import Session
 
 logger = logging.getLogger(__name__)
 
@@ -102,7 +107,6 @@ class ValidationHelper:
     @staticmethod
     def is_valid_email(email: str) -> bool:
         """Basic email validation."""
-        import re
         pattern = r'^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$'
         return bool(re.match(pattern, email))
     
@@ -111,14 +115,12 @@ class ValidationHelper:
         """Sanitize string input."""
         if not isinstance(text, str):
             text = str(text)
-        
-        # Remove potential harmful characters
-        import re
+
         text = re.sub(r'[<>]', '', text)
-        
+
         if max_length and len(text) > max_length:
             text = text[:max_length]
-        
+
         return text.strip()
     
     @staticmethod
@@ -135,17 +137,12 @@ class CacheHelper:
     @staticmethod
     def make_cache_key(prefix: str, *args) -> str:
         """Generate a cache key from prefix and arguments."""
-        import hashlib
         key_string = f"{prefix}:{':'.join(str(arg) for arg in args)}"
         return hashlib.md5(key_string.encode()).hexdigest()
     
     @staticmethod
     def serialize_for_cache(data: Any) -> str:
         """Serialize data for caching."""
-        import json
-        from datetime import datetime, date
-        from decimal import Decimal
-        
         class CustomJSONEncoder(json.JSONEncoder):
             def default(self, obj):
                 if isinstance(obj, (datetime, date)):
@@ -153,13 +150,12 @@ class CacheHelper:
                 if isinstance(obj, Decimal):
                     return float(obj)
                 return super().default(obj)
-        
+
         return json.dumps(data, cls=CustomJSONEncoder)
     
     @staticmethod
     def deserialize_from_cache(data: str) -> Any:
         """Deserialize data from cache."""
-        import json
         return json.loads(data)
 
 

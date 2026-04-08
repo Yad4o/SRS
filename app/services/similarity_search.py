@@ -1,3 +1,4 @@
+import json
 import math
 import re
 from collections import Counter
@@ -7,6 +8,19 @@ from app.core.config import settings
 from app.models.ticket import Ticket
 from app.utils.service_helpers import CacheHelper, ErrorHelper, MetricsHelper
 from sqlalchemy.orm import Session
+
+
+class _SafeEncoder(json.JSONEncoder):
+    """JSON encoder that serialises datetime objects to ISO strings."""
+
+    def default(self, obj):
+        if hasattr(obj, "isoformat"):
+            return obj.isoformat()
+        return super().default(obj)
+
+
+# Alias used internally
+SafeEncoder = _SafeEncoder
 
 # Redis client singleton for lazy load
 _redis_client = None

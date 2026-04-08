@@ -28,12 +28,15 @@ References:
 - Technical Spec § 10.2 (Password Handling)
 """
 
+import logging
 from datetime import datetime, timedelta, timezone
 
 from jose import JWTError, jwt
 from passlib.context import CryptContext
 
 from app.core.config import settings
+
+logger = logging.getLogger(__name__)
 
 # -------------------------------------------------
 # Password Hashing
@@ -82,9 +85,6 @@ def _truncate_password_for_bcrypt(plain_password: str) -> str:
     original_bytes = len(plain_password.encode('utf-8'))
     
     if original_bytes > 72:
-        import logging
-        logger = logging.getLogger(__name__)
-        
         # Find the character position that keeps us within 72 bytes
         truncated_password = ""
         byte_count = 0
@@ -94,12 +94,10 @@ def _truncate_password_for_bcrypt(plain_password: str) -> str:
                 break
             truncated_password += char
             byte_count += len(char_bytes)
-        
+
         # Log the truncation for security monitoring (without revealing length details)
-        logger.warning(
-            "Password truncated to fit bcrypt 72-byte limit for security"
-        )
-        
+        logger.warning("Password truncated to fit bcrypt 72-byte limit for security")
+
         return truncated_password
     
     return plain_password
