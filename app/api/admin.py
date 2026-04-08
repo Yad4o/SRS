@@ -35,6 +35,7 @@ from app.models.ticket import Ticket
 from app.models.feedback import Feedback
 from app.models.user import User
 from app.api.auth import get_current_user
+from app.constants import UserRole
 from app.core.exceptions import (
     AuthorizationError,
     ValidationError,
@@ -63,7 +64,7 @@ def require_admin(current_user: User = Depends(get_current_user)) -> User:
     Raises:
         AuthorizationError: If user is not admin
     """
-    if current_user.role != "admin":
+    if current_user.role != UserRole.ADMIN.value:
         raise AuthorizationError("Access denied. Admin role required.")
     return current_user
 

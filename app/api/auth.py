@@ -40,6 +40,8 @@ from datetime import timedelta
 from typing import Annotated
 from jose import JWTError
 
+from app.constants import UserRole
+
 from app.core.security import verify_password, create_access_token, hash_password, decode_token, check_password_truncation
 from app.core.config import settings, ALLOWED_ROLES
 from app.core.otp import generate_otp, send_otp_email, log_otp_for_dev, is_otp_expired, get_otp_expiration_time
@@ -123,6 +125,8 @@ def authenticate_user(db: Session, email: str, password: str) -> User | None:
         user = db.query(User).filter(User.email == normalized_email).first()
         if not user:
             return None
+        if not user.is_active:
+            return None
         if not verify_password(password, user.hashed_password):
             return None
         return user
@@ -164,7 +168,7 @@ def create_user(db: Session, user_create: UserCreate) -> UserResponse:
         hashed_password = hash_password(user_create.password)
         
         # Use role from user_create, fallback to default if not provided
-        user_role = getattr(user_create, 'role', None) or getattr(settings, 'DEFAULT_USER_ROLE', 'user')
+        user_role = getattr(user_create, 'role', None) or getattr(settings, 'DEFAULT_USER_ROLE', UserRole.USER.value)
         
         # Validate role against allowed roles
         if user_role not in ALLOWED_ROLES:

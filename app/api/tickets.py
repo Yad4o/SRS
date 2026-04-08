@@ -54,6 +54,7 @@ from app.services.similarity_search import (
 )
 import json
 from app.core.limiter import limiter
+from app.constants import TicketStatus, DEFAULT_PAGE_SIZE, MAX_PAGE_SIZE, UserRole
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/tickets", tags=["Tickets"])
@@ -297,7 +298,7 @@ def list_tickets(
             query = query.filter(Ticket.status == ticket_status)
         
         # Apply user filter for non-admin/agent users
-        if user_id and user_role not in ["admin", "agent"]:
+        if user_id and user_role not in [UserRole.ADMIN.value, UserRole.AGENT.value]:
             query = query.filter(Ticket.user_id == user_id)
         
         # Get total before pagination

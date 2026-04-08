@@ -22,9 +22,10 @@ DO NOT:
 - Write database queries here
 """
 
-from sqlalchemy import Column, Integer, String, DateTime
+from sqlalchemy import Column, Integer, String, DateTime, Boolean
 from sqlalchemy.sql import func
 from app.db.session import Base
+from app.constants import UserRole
 
 
 class User(Base):
@@ -42,7 +43,7 @@ class User(Base):
     def __init__(self, **kwargs):
         """Initialize User with default role if not provided."""
         if 'role' not in kwargs:
-            kwargs['role'] = 'user'
+            kwargs['role'] = UserRole.USER.value
         super().__init__(**kwargs)
 
     def __repr__(self):
@@ -75,9 +76,16 @@ class User(Base):
 
     role = Column(
         String,
-        default="user",
+        default=UserRole.USER.value,
         nullable=False,
         doc="User role: user | agent | admin",
+    )
+
+    is_active = Column(
+        Boolean,
+        default=True,
+        nullable=False,
+        doc="Whether the user account is active",
     )
 
     # Password reset fields
@@ -101,8 +109,19 @@ class User(Base):
     )
 
     # -------------------------------------------------
-    # TODO (Future Enhancements)
+    # Timestamps
     # -------------------------------------------------
-    # - created_at timestamp
-    # - updated_at timestamp
-    # - is_active flag
+    created_at = Column(
+        DateTime(timezone=True),
+        server_default=func.now(),
+        nullable=False,
+        doc="Timestamp when the user was created",
+    )
+
+    updated_at = Column(
+        DateTime(timezone=True),
+        server_default=func.now(),
+        onupdate=func.now(),
+        nullable=False,
+        doc="Timestamp when the record was last updated",
+    )
