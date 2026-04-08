@@ -1,4 +1,4 @@
-name: Deploy to Production
+name: Deploy Backend
 
 on:
   push:
@@ -10,33 +10,9 @@ on:
       - 'docker-compose.yml'
   workflow_dispatch:
 
-env:
-  ENVIRONMENT: production
-  DOCKER_IMAGE: ${{ secrets.DOCKER_USERNAME }}/srs-backend:latest
-
 jobs:
-  validate-secrets:
-    runs-on: ubuntu-latest
-    outputs:
-      secrets-valid: ${{ steps.check.outputs.secrets-valid }}
-    steps:
-      - name: Validate required secrets
-        id: check
-        run: |
-          if [[ -z "${{ secrets.DOCKER_USERNAME }}" || -z "${{ secrets.DOCKER_PASSWORD }}" || -z "${{ secrets.HOST }}" || -z "${{ secrets.USERNAME }}" || -z "${{ secrets.SSH_KEY }}" ]]; then
-            echo "secrets-valid=false" >> $GITHUB_OUTPUT
-            echo "Missing required secrets"
-            exit 1
-          else
-            echo "secrets-valid=true" >> $GITHUB_OUTPUT
-          fi
-
   deploy:
     runs-on: ubuntu-latest
-    needs: validate-secrets
-    if: needs.validate-secrets.outputs.secrets-valid == 'true'
-    environment: production
-    
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -50,20 +26,16 @@ jobs:
           username: ${{ secrets.DOCKER_USERNAME }}
           password: ${{ secrets.DOCKER_PASSWORD }}
 
-      - name: Build and push production image
+      - name: Build and push Docker image
         uses: docker/build-push-action@v5
         with:
           context: .
           push: true
-          tags: |
-            ${{ env.DOCKER_IMAGE }}
-            ${{ secrets.DOCKER_USERNAME }}/srs-backend:${{ github.sha }}
+          tags: ${{ secrets.DOCKER_USERNAME }}/srs-backend:latest
           cache-from: type=gha
           cache-to: type=gha,mode=max
-          build-args: |
-            ENVIRONMENT=production
 
-      - name: Create backup before deployment
+      - name: Deploy to server
         uses: appleboy/ssh-action@v1.0.0
         with:
           host: ${{ secrets.HOST }}
@@ -71,86 +43,6 @@ jobs:
           key: ${{ secrets.SSH_KEY }}
           script: |
             cd /opt/srs
-            
-            # Create backup
-            docker-compose down
-            docker tag ${{ env.DOCKER_IMAGE }} ${{ env.DOCKER_IMAGE }}-backup-$(date +%Y%m%d-%H%M%S) || true
-            docker-compose up -d backup || true
-
-      - name: Deploy to production server
-        uses: appleboy/ssh-action@v1.0.0
-        with:
-          host: ${{ secrets.HOST }}
-          username: ${{ secrets.USERNAME }}
-          key: ${{ secrets.SSH_KEY }}
-          script: |
-            cd /opt/srs
-            
-            # Deploy new version
             docker-compose pull
             docker-compose up -d
-            
-            # Wait for application to start
-            sleep 60
-            
-            # Health check
-            if ! docker-compose exec -T app curl -f http://localhost:8000/health; then
-              echo "Health check failed!"
-              docker-compose logs app
-              exit 1
-            fi
-            
-            # Cleanup old images
             docker system prune -f
-
-      - name: Run smoke tests
-        run: |
-          sleep 90
-          # Basic health checks
-          curl -f ${{ secrets.PROD_URL || 'https://api.yourdomain.com' }}/health || exit 1
-          curl -f ${{ secrets.PROD_URL || 'https://api.yourdomain.com' }}/api/v1/status || exit 1
-          
-          # API functionality test
-          curl -f ${{ secrets.PROD_URL || 'https://api.yourdomain.com' }}/api/v1/tickets || exit 1
-
-      - name: Rollback on failure
-        if: failure()
-        uses: appleboy/ssh-action@v1.0.0
-        with:
-          host: ${{ secrets.HOST }}
-          username: ${{ secrets.USERNAME }}
-          key: ${{ secrets.SSH_KEY }}
-          script: |
-            cd /opt/srs
-            
-            # Rollback to previous version
-            LATEST_BACKUP=$(docker images --format "table {{.Repository}}:{{.Tag}}" | grep "${{ secrets.DOCKER_USERNAME }}/srs-backend:backup" | head -1)
-            if [[ -n "$LATEST_BACKUP" ]]; then
-              docker-compose down
-              docker tag $LATEST_BACKUP ${{ env.DOCKER_IMAGE }}
-              docker-compose up -d
-              echo "Rolled back to: $LATEST_BACKUP"
-            else
-              echo "No backup found for rollback"
-              exit 1
-            fi
-
-      - name: Notify Slack on success
-        if: success()
-        uses: 8398a7/action-slack@v3
-        with:
-          status: success
-          channel: '#deployments'
-          text: 'Production deployment successful! ${{ secrets.PROD_URL }}'
-        env:
-          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK }}
-
-      - name: Notify Slack on failure
-        if: failure()
-        uses: 8398a7/action-slack@v3
-        with:
-          status: failure
-          channel: '#deployments'
-          text: 'Production deployment failed! Check logs for details.'
-        env:
-          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK }}
