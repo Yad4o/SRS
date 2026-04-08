@@ -81,7 +81,6 @@ def _truncate_password_for_bcrypt(plain_password: str) -> str:
         Password truncated to maximum 72 bytes
     """
     # bcrypt has a 72-byte limit for passwords
-    original_length = len(plain_password)
     original_bytes = len(plain_password.encode('utf-8'))
     
     if original_bytes > 72:

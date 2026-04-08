@@ -6,6 +6,15 @@ This migration adds the following columns to the existing users table:
 - reset_otp_expires_at: Timestamp for OTP expiration
 - reset_otp_attempts: Integer counter for OTP verification attempts
 
+NOTE: This file intentionally remains in migrations/ because the OTP columns
+(reset_otp, reset_otp_expires_at, reset_otp_attempts) are present in the
+User model but are NOT covered by any Alembic revision yet.  Fresh installs
+created via `alembic upgrade head` will be missing these columns.
+
+TODO: Port this into a new Alembic revision so that `alembic upgrade head`
+      handles the full schema, then delete this file.
+      See: alembic/versions/ for existing revisions.
+
 Run this migration for existing installations that don't have the OTP columns.
 """
 
