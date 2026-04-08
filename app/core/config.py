@@ -92,6 +92,7 @@ class Settings(BaseSettings):
     # -------------------------------------------------
     AI_PROVIDER: str = "openai"  # openai | spacy
     OPENAI_API_KEY: str | None = None
+    RESEND_API_KEY: str | None = None
     OPENAI_MODEL: str = "gpt-4o-mini"
     OPENAI_TIMEOUT: int = 8
     OPENAI_MAX_TOKENS: int = 200

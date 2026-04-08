@@ -86,7 +86,7 @@ def create_feedback(
         # This IntegrityError handler is effectively a defensive backup for a concurrent-insert race 
         # condition because create_feedback_record already pre-checks for existing feedback
         if "UNIQUE constraint failed" in str(e) or "duplicate key" in str(e).lower():
-            logger.exception(f"Concurrent insert race detected: {str(e)}")
+            logger.exception("Concurrent insert race detected")
             raise HTTPException(
                 status_code=status.HTTP_409_CONFLICT,
                 detail=f"Feedback already exists for ticket {feedback_data.ticket_id}"

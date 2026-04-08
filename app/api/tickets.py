@@ -221,7 +221,7 @@ def create_ticket(
             
         except Exception as ai_error:
             # AI failure: escalate for safety (never block user)
-            logger.exception(f"AI pipeline failed for ticket {ticket.id}: {ai_error}")
+            logger.exception(f"AI pipeline failed for ticket {ticket.id}")
             
             # Rollback any partial AI processing, then escalate
             db.rollback()

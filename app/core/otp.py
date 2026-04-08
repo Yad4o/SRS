@@ -60,7 +60,7 @@ def send_otp_email(email: str, otp: str) -> bool:
         True if email sent successfully, False otherwise
     """
     try:
-        resend.api_key = os.getenv("RESEND_API_KEY")
+        resend.api_key = settings.RESEND_API_KEY
 
         if not resend.api_key:
             logger.warning("RESEND_API_KEY not configured — using development fallback")

@@ -40,7 +40,7 @@ class DatabaseOps:
             db.commit()
             return True
         except Exception as e:
-            logger.error(f"Database commit failed: {e}")
+            logger.exception("Database commit failed")
             db.rollback()
             return False
     
@@ -54,7 +54,7 @@ class DatabaseOps:
             db.refresh(instance)
             return instance
         except Exception as e:
-            logger.error(f"Failed to create {model.__name__}: {e}")
+            logger.exception(f"Failed to create {model.__name__}")
             db.rollback()
             raise
     
@@ -64,7 +64,7 @@ class DatabaseOps:
         try:
             return db.query(model).filter(model.id == id).first()
         except Exception as e:
-            logger.error(f"Failed to get {model.__name__} with id {id}: {e}")
+            logger.exception(f"Failed to get {model.__name__} with id {id}")
             return None
 
 
@@ -165,13 +165,13 @@ class ErrorHelper:
     @staticmethod
     def log_and_raise(error: Exception, message: str = "An error occurred"):
         """Log an error and raise it."""
-        logger.error(f"{message}: {error}")
+        logger.exception(message)
         raise error
     
     @staticmethod
     def handle_database_error(error: Exception, operation: str) -> dict[str, Any]:
         """Handle database errors consistently."""
-        logger.error(f"Database error during {operation}: {error}")
+        logger.exception(f"Database error during {operation}")
         return ResponseFormatter.error_response(
             message="Database operation failed",
             code="DATABASE_ERROR",

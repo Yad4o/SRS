@@ -127,7 +127,7 @@ def authenticate_user(db: Session, email: str, password: str) -> User | None:
             return None
         return user
     except SQLAlchemyError as e:
-        logger.error(f"Database error during authentication: {e}")
+        logger.exception("Database error during authentication")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=AUTH_SERVICE_UNAVAILABLE
@@ -210,21 +210,21 @@ def create_user(db: Session, user_create: UserCreate) -> UserResponse:
                 detail=EMAIL_ALREADY_REGISTERED
             )
         else:
-            logger.error(f"Database integrity error creating user: {e}")
+            logger.exception("Database integrity error creating user")
             raise HTTPException(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
                 detail=AUTH_SERVICE_UNAVAILABLE
             )
     except SQLAlchemyError as e:
         db.rollback()
-        logger.error(f"Database error creating user: {e}")
+        logger.exception("Database error creating user")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=AUTH_SERVICE_UNAVAILABLE
         )
     except Exception as e:
         db.rollback()
-        logger.error(f"Unexpected error during user creation: {e}")
+        logger.exception("Unexpected error during user creation")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=AUTH_SERVICE_UNAVAILABLE
@@ -342,7 +342,7 @@ def get_current_user(
             raise credentials_exception
         return user
     except SQLAlchemyError as e:
-        logger.error(f"Database error retrieving user: {e}")
+        logger.exception("Database error retrieving user")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=AUTH_SERVICE_UNAVAILABLE
@@ -429,7 +429,7 @@ def forgot_password(
         )
         
     except SQLAlchemyError as e:
-        logger.error(f"Database error in forgot_password: {e}")
+        logger.exception("Database error in forgot_password")
         db.rollback()
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
@@ -438,7 +438,7 @@ def forgot_password(
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"Unexpected error in forgot_password: {e}")
+        logger.exception("Unexpected error in forgot_password")
         db.rollback()
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
@@ -532,7 +532,7 @@ def verify_otp(
         )
         
     except SQLAlchemyError as e:
-        logger.error(f"Database error in verify_otp: {e}")
+        logger.exception("Database error in verify_otp")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=AUTH_SERVICE_UNAVAILABLE
@@ -540,7 +540,7 @@ def verify_otp(
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"Unexpected error in verify_otp: {e}")
+        logger.exception("Unexpected error in verify_otp")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=AUTH_SERVICE_UNAVAILABLE
@@ -589,7 +589,7 @@ def reset_password(
         )
         
     except SQLAlchemyError as e:
-        logger.error(f"Database error in reset_password: {e}")
+        logger.exception("Database error in reset_password")
         db.rollback()
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
@@ -598,7 +598,7 @@ def reset_password(
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"Unexpected error in reset_password: {e}")
+        logger.exception("Unexpected error in reset_password")
         db.rollback()
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
