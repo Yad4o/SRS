@@ -62,45 +62,7 @@ RESOLVED_STATUSES = {"auto_resolved", "closed"}
 # Default output path (relative to project root)
 DEFAULT_OUTPUT = project_root / "embeddings.json"
 
-
-# ---------------------------------------------------------------------------
-# TF-IDF helpers
-# These implement a standard smoothed TF-IDF: IDF is computed over the
-# resolved-ticket corpus (the full batch being embedded).  This differs from
-# the runtime similarity scorer in app/services/similarity_search.py, which
-# incorporates the incoming query into the IDF corpus at search time.
-# Precomputed vectors therefore use corpus-only weighting and serve as a
-# fast approximation for batch indexing.
-# ---------------------------------------------------------------------------
-
-def _tokenize(text: str) -> List[str]:
-    """Return lowercase word tokens from *text*."""
-    if not text or not isinstance(text, str):
-        return []
-    return re.findall(r"\b\w+\b", text.lower())
-
-
-def _compute_idf(corpus: List[str]) -> Dict[str, float]:
-    """Compute IDF scores for every token present in *corpus*."""
-    total = len(corpus)
-    doc_counts: Counter = Counter()
-    for doc in corpus:
-        for token in set(_tokenize(doc)):
-            doc_counts[token] += 1
-    return {
-        word: math.log((total + 1) / (count + 1)) + 1
-        for word, count in doc_counts.items()
-    }
-
-
-def _tf_idf_vector(text: str, idf: Dict[str, float]) -> Dict[str, float]:
-    """Return the TF-IDF vector for *text* given precomputed *idf* scores."""
-    tokens = _tokenize(text)
-    if not tokens:
-        return {}
-    tf = Counter(tokens)
-    total = len(tokens)
-    return {word: (count / total) * idf.get(word, 1.0) for word, count in tf.items()}
+from app.utils.text_processing import tokenize as _tokenize, compute_idf as _compute_idf, tf_idf_vector as _tf_idf_vector
 
 
 # ---------------------------------------------------------------------------

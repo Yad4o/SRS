@@ -28,6 +28,35 @@ import re
 from pydantic import BaseModel, EmailStr, ConfigDict, field_validator
 
 
+def validate_password_complexity(v: str) -> str:
+    """
+    Validate password complexity:
+    - Min 8 characters
+    - At least one uppercase letter
+    - At least one lowercase letter
+    - At least one digit
+    - At least one special character
+    """
+    if len(v) < 8:
+        raise ValueError("Password must be at least 8 characters long")
+    if not re.search(r"[A-Z]", v):
+        raise ValueError("Password must contain at least one uppercase letter")
+    if not re.search(r"[a-z]", v):
+        raise ValueError("Password must contain at least one lowercase letter")
+    if not re.search(r"\d", v):
+        raise ValueError("Password must contain at least one digit")
+    if not re.search(r"[!@#$%^&*(),.?\":{}|<>]", v):
+        raise ValueError("Password must contain at least one special character")
+    return v
+
+
+def validate_otp_code(v: str) -> str:
+    """Validate OTP format."""
+    if not v.isdigit() or len(v) != 6:
+        raise ValueError("OTP must be a 6-digit number")
+    return v
+
+
 # -------------------------------------------------
 # Request Schemas
 # -------------------------------------------------
@@ -73,25 +102,7 @@ class UserCreate(BaseModel):
     @field_validator("password")
     @classmethod
     def password_complexity(cls, v: str) -> str:
-        """
-        Validate password complexity:
-        - Min 8 characters
-        - At least one uppercase letter
-        - At least one lowercase letter
-        - At least one digit
-        - At least one special character
-        """
-        if len(v) < 8:
-            raise ValueError("Password must be at least 8 characters long")
-        if not re.search(r"[A-Z]", v):
-            raise ValueError("Password must contain at least one uppercase letter")
-        if not re.search(r"[a-z]", v):
-            raise ValueError("Password must contain at least one lowercase letter")
-        if not re.search(r"\d", v):
-            raise ValueError("Password must contain at least one digit")
-        if not re.search(r"[!@#$%^&*(),.?\":{}|<>]", v):
-            raise ValueError("Password must contain at least one special character")
-        return v
+        return validate_password_complexity(v)
 
     @field_validator("role")
     @classmethod
@@ -141,12 +152,7 @@ class VerifyOTPRequest(BaseModel):
     @field_validator("otp")
     @classmethod
     def validate_otp(cls, v: str) -> str:
-        """
-        Validate OTP format.
-        """
-        if not v.isdigit() or len(v) != 6:
-            raise ValueError("OTP must be a 6-digit number")
-        return v
+        return validate_otp_code(v)
 
 
 class ResetPasswordRequest(BaseModel):
@@ -171,35 +177,12 @@ class ResetPasswordRequest(BaseModel):
     @field_validator("otp")
     @classmethod
     def validate_otp(cls, v: str) -> str:
-        """
-        Validate OTP format.
-        """
-        if not v.isdigit() or len(v) != 6:
-            raise ValueError("OTP must be a 6-digit number")
-        return v
+        return validate_otp_code(v)
 
     @field_validator("new_password")
     @classmethod
     def password_complexity(cls, v: str) -> str:
-        """
-        Validate password complexity:
-        - Min 8 characters
-        - At least one uppercase letter
-        - At least one lowercase letter
-        - At least one digit
-        - At least one special character
-        """
-        if len(v) < 8:
-            raise ValueError("Password must be at least 8 characters long")
-        if not re.search(r"[A-Z]", v):
-            raise ValueError("Password must contain at least one uppercase letter")
-        if not re.search(r"[a-z]", v):
-            raise ValueError("Password must contain at least one lowercase letter")
-        if not re.search(r"\d", v):
-            raise ValueError("Password must contain at least one digit")
-        if not re.search(r"[!@#$%^&*(),.?\":{}|<>]", v):
-            raise ValueError("Password must contain at least one special character")
-        return v
+        return validate_password_complexity(v)
 
 
 # -------------------------------------------------

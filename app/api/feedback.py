@@ -42,6 +42,53 @@ router = APIRouter(
 )
 
 
+def _create_feedback(db: Session, ticket_id: int, rating: int, resolved: bool) -> Feedback:
+    """Helper method to encapsulate shared feedback creation logic."""
+    # Validate that ticket exists
+    ticket = db.query(Ticket).filter(Ticket.id == ticket_id).first()
+    if not ticket:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Ticket with ID {ticket_id} not found"
+        )
+    
+    # Check if ticket is in resolved state
+    if ticket.status not in ["auto_resolved", "closed"]:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Ticket {ticket_id} is not resolved (current status: {ticket.status})"
+        )
+    
+    # Check for existing feedback to prevent duplicates
+    existing_feedback = db.query(Feedback).filter(Feedback.ticket_id == ticket_id).first()
+    if existing_feedback:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=f"Feedback already exists for ticket {ticket_id}"
+        )
+    
+    # Create feedback record
+    feedback = Feedback(
+        ticket_id=ticket_id,
+        rating=rating,
+        resolved=resolved
+    )
+    
+    # Save to database
+    db.add(feedback)
+    db.commit()
+    db.refresh(feedback)
+    
+    # Compute quality score for the ticket
+    base_score = rating / 5.0
+    resolution_boost = 0.1 if resolved else -0.1
+    ticket.quality_score = max(0.0, min(1.0, base_score + resolution_boost))
+    db.commit()
+    
+    logger.info(f"Feedback created for ticket {ticket_id}: rating={rating}, resolved={resolved}")
+    return feedback
+
+
 @router.post("/", status_code=status.HTTP_201_CREATED, response_model=FeedbackResponse)
 def create_feedback(
     feedback_data: FeedbackCreate,
@@ -68,49 +115,12 @@ def create_feedback(
         HTTPException: If ticket not found or database operation fails
     """
     try:
-        # Validate that ticket exists
-        ticket = db.query(Ticket).filter(Ticket.id == feedback_data.ticket_id).first()
-        if not ticket:
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail=f"Ticket with ID {feedback_data.ticket_id} not found"
-            )
-        
-        # Check if ticket is in resolved state
-        if ticket.status not in ["auto_resolved", "closed"]:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail=f"Ticket {feedback_data.ticket_id} is not resolved (current status: {ticket.status})"
-            )
-        
-        # Check for existing feedback to prevent duplicates
-        existing_feedback = db.query(Feedback).filter(Feedback.ticket_id == feedback_data.ticket_id).first()
-        if existing_feedback:
-            raise HTTPException(
-                status_code=status.HTTP_409_CONFLICT,
-                detail=f"Feedback already exists for ticket {feedback_data.ticket_id}"
-            )
-        
-        # Create feedback record
-        feedback = Feedback(
+        feedback = _create_feedback(
+            db=db,
             ticket_id=feedback_data.ticket_id,
             rating=feedback_data.rating,
             resolved=feedback_data.resolved
         )
-        
-        # Save to database
-        db.add(feedback)
-        db.commit()
-        db.refresh(feedback)
-        
-        # Compute quality score for the ticket
-        base_score = feedback_data.rating / 5.0
-        resolution_boost = 0.1 if feedback_data.resolved else -0.1
-        ticket.quality_score = max(0.0, min(1.0, base_score + resolution_boost))
-        db.commit()
-        
-        logger.info(f"Feedback created for ticket {feedback_data.ticket_id}: rating={feedback_data.rating}, resolved={feedback_data.resolved}")
-        
         return FeedbackResponse.model_validate(feedback)
         
     except HTTPException:

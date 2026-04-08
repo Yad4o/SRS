@@ -129,7 +129,7 @@ def db():
         db.close()
 
 
-@pytest.fixture
+@pytest.fixture(autouse=True)
 def reset_limiter():
     """Reset rate limiter between tests."""
     from app.core.limiter import limiter
@@ -174,11 +174,18 @@ class BaseTestClass:
         assert "created_at" in data
     
     @staticmethod
-    def assert_error_response(response, expected_status: int, expected_detail: str = None):
+    def assert_error_response(response, expected_status: int, expected_message: str = None):
         """Assert error response structure."""
         assert response.status_code == expected_status
-        if expected_detail:
-            assert expected_detail in response.json().get("detail", "")
+        if expected_message:
+            data = response.json()
+            if "error" in data:
+                actual_msg = data["error"].get("message", "")
+            else:
+                actual_msg = data.get("detail", "")
+                if isinstance(actual_msg, list):
+                    actual_msg = str(actual_msg)
+            assert expected_message.lower() in actual_msg.lower()
     
     @staticmethod
     def create_mock_ticket():

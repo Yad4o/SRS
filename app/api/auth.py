@@ -445,6 +445,61 @@ def forgot_password(
         )
 
 
+def _verify_user_otp(db: Session, email: str, otp: str) -> User:
+    """Helper method to encapsulate OTP verification logic."""
+    # Normalize email
+    normalized_email = normalize_email(email)
+    
+    # Find user by email
+    user = db.query(User).filter(User.email == normalized_email).first()
+    if not user:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=EMAIL_NOT_FOUND
+        )
+    
+    # Check if user has OTP
+    if not user.reset_otp or not user.reset_otp_expires_at:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=INVALID_OTP
+        )
+    
+    # Check if OTP is expired
+    if is_otp_expired(user.reset_otp_expires_at):
+        # Clear expired OTP
+        user.reset_otp = None
+        user.reset_otp_expires_at = None
+        user.reset_otp_attempts = 0
+        db.commit()
+        
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=OTP_EXPIRED
+        )
+    
+    # Check max attempts (3 attempts allowed)
+    if user.reset_otp_attempts >= 3:
+        raise HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            detail=MAX_OTP_ATTEMPTS
+        )
+    
+    # Verify OTP
+    if user.reset_otp != otp:
+        # Increment attempts
+        user.reset_otp_attempts += 1
+        db.commit()
+        
+        remaining_attempts = 3 - user.reset_otp_attempts
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Invalid OTP. {remaining_attempts} attempts remaining"
+        )
+        
+    return user
+
+
 @router.post("/verify-otp", response_model=VerifyOTPResponse)
 def verify_otp(
     request: VerifyOTPRequest,
@@ -464,55 +519,7 @@ def verify_otp(
         HTTPException: If OTP is invalid/expired (400) or max attempts exceeded (429)
     """
     try:
-        # Normalize email
-        normalized_email = normalize_email(request.email)
-        
-        # Find user by email
-        user = db.query(User).filter(User.email == normalized_email).first()
-        if not user:
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail=EMAIL_NOT_FOUND
-            )
-        
-        # Check if user has OTP
-        if not user.reset_otp or not user.reset_otp_expires_at:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail=INVALID_OTP
-            )
-        
-        # Check if OTP is expired
-        if is_otp_expired(user.reset_otp_expires_at):
-            # Clear expired OTP
-            user.reset_otp = None
-            user.reset_otp_expires_at = None
-            user.reset_otp_attempts = 0
-            db.commit()
-            
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail=OTP_EXPIRED
-            )
-        
-        # Check max attempts (3 attempts allowed)
-        if user.reset_otp_attempts >= 3:
-            raise HTTPException(
-                status_code=status.HTTP_429_TOO_MANY_REQUESTS,
-                detail=MAX_OTP_ATTEMPTS
-            )
-        
-        # Verify OTP
-        if user.reset_otp != request.otp:
-            # Increment attempts
-            user.reset_otp_attempts += 1
-            db.commit()
-            
-            remaining_attempts = 3 - user.reset_otp_attempts
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail=f"Invalid OTP. {remaining_attempts} attempts remaining"
-            )
+        user = _verify_user_otp(db, request.email, request.otp)
         
         # OTP is valid - reset attempts
         user.reset_otp_attempts = 0
@@ -558,55 +565,7 @@ def reset_password(
         HTTPException: If OTP is invalid/expired (400) or max attempts exceeded (429)
     """
     try:
-        # Normalize email
-        normalized_email = normalize_email(request.email)
-        
-        # Find user by email
-        user = db.query(User).filter(User.email == normalized_email).first()
-        if not user:
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail=EMAIL_NOT_FOUND
-            )
-        
-        # Check if user has OTP
-        if not user.reset_otp or not user.reset_otp_expires_at:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail=INVALID_OTP
-            )
-        
-        # Check if OTP is expired
-        if is_otp_expired(user.reset_otp_expires_at):
-            # Clear expired OTP
-            user.reset_otp = None
-            user.reset_otp_expires_at = None
-            user.reset_otp_attempts = 0
-            db.commit()
-            
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail=OTP_EXPIRED
-            )
-        
-        # Check max attempts
-        if user.reset_otp_attempts >= 3:
-            raise HTTPException(
-                status_code=status.HTTP_429_TOO_MANY_REQUESTS,
-                detail=MAX_OTP_ATTEMPTS
-            )
-        
-        # Verify OTP
-        if user.reset_otp != request.otp:
-            # Increment attempts
-            user.reset_otp_attempts += 1
-            db.commit()
-            
-            remaining_attempts = 3 - user.reset_otp_attempts
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail=f"Invalid OTP. {remaining_attempts} attempts remaining"
-            )
+        user = _verify_user_otp(db, request.email, request.otp)
         
         # Check password truncation
         truncation_info = check_password_truncation(request.new_password)

@@ -3,7 +3,7 @@ import math
 import re
 from collections import Counter
 from typing import Dict, List, Optional
-
+from app.utils.text_processing import tokenize, compute_idf, tf_idf_vector
 from app.core.config import settings
 from app.models.ticket import Ticket
 from app.utils.service_helpers import CacheHelper, ErrorHelper, MetricsHelper
@@ -52,109 +52,7 @@ def _cache_key(message: str) -> str:
     return CacheHelper.make_cache_key("srs:similarity", message)[:32]
 
 
-def _tokenize(text: str) -> List[str]:
-    """
-    Tokenize text into words.
-    
-    Args:
-        text: Input text to tokenize
-        
-    Returns:
-        List of lowercase tokens
-    """
-    if not text or not isinstance(text, str):
-        return []
-    
-    # Use validation helper to sanitize input
-    from app.utils.service_helpers import ValidationHelper
-    text = ValidationHelper.sanitize_string(text)
-    text = text.lower()
-    tokens = re.findall(r'\b\w+\b', text)
-    return tokens
 
-
-def _compute_idf(all_texts: List[str]) -> Dict[str, float]:
-    """
-    Precompute IDF scores for all texts in corpus.
-    
-    Args:
-        all_texts: All texts in corpus
-        
-    Returns:
-        Dictionary of word -> IDF score
-    """
-    total_docs = len(all_texts)
-    doc_counts = Counter()
-    
-    # Count documents containing each word
-    for doc_text in all_texts:
-        doc_tokens = set(_tokenize(doc_text))
-        for token in doc_tokens:
-            doc_counts[token] += 1
-    
-    # Calculate IDF for each word
-    idf_scores = {}
-    for word in doc_counts:
-        idf = math.log((total_docs + 1) / (doc_counts[word] + 1)) + 1
-        idf_scores[word] = idf
-    
-    return idf_scores
-
-
-def _calculate_tf(text: str) -> Dict[str, float]:
-    """
-    Calculate term frequency (TF) for a text.
-    
-    Args:
-        text: The text to calculate TF for
-        
-    Returns:
-        Dictionary of word -> TF score
-    """
-    tokens = _tokenize(text)
-    if not tokens:
-        return {}
-    
-    tf = Counter(tokens)
-    total_tokens = len(tokens)
-    tf_scores = {word: count / total_tokens for word, count in tf.items()}
-    
-    return tf_scores
-
-
-def _apply_idf(tf_scores: Dict[str, float], idf_scores: Dict[str, float]) -> Dict[str, float]:
-    """
-    Apply IDF scores to TF scores to get TF-IDF.
-    
-    Args:
-        tf_scores: Term frequency scores
-        idf_scores: Precomputed IDF scores
-        
-    Returns:
-        Dictionary of word -> TF-IDF score
-    """
-    tfidf_scores = {}
-    for word, tf_score in tf_scores.items():
-        tfidf_scores[word] = tf_score * idf_scores.get(word, 1)
-    
-    return tfidf_scores
-
-
-def _calculate_tf_idf(text: str, all_texts: List[str]) -> Dict[str, float]:
-    """
-    Calculate TF-IDF scores for a text against a corpus.
-    
-    Args:
-        text: The text to calculate TF-IDF for
-        all_texts: All texts in the corpus (for backward compatibility)
-        
-    Returns:
-        Dictionary of word -> TF-IDF score
-    """
-    # For backward compatibility, compute IDF on the fly
-    idf_scores = _compute_idf(all_texts)
-    tf_scores = _calculate_tf(text)
-    return _apply_idf(tf_scores, idf_scores)
 
 
 def _cosine_similarity(tfidf1: Dict[str, float], tfidf2: Dict[str, float]) -> float:
@@ -263,11 +161,10 @@ def find_similar_ticket(new_message: str, resolved_tickets: List[Dict], similari
         return None
 
     # Precompute IDF scores once for efficiency
-    idf_scores = _compute_idf([new_message] + ticket_messages)
+    idf_scores = compute_idf([new_message] + ticket_messages)
 
     # Calculate TF-IDF for new message
-    new_tf = _calculate_tf(new_message)
-    new_tfidf = _apply_idf(new_tf, idf_scores)
+    new_tfidf = tf_idf_vector(new_message, idf_scores)
 
     # Find best match
     best_match = None
@@ -283,8 +180,7 @@ def find_similar_ticket(new_message: str, resolved_tickets: List[Dict], similari
             continue
 
         # Calculate TF-IDF for this ticket
-        ticket_tf = _calculate_tf(ticket_message)
-        ticket_tfidf = _apply_idf(ticket_tf, idf_scores)
+        ticket_tfidf = tf_idf_vector(ticket_message, idf_scores)
 
         # Calculate cosine similarity
         similarity = _cosine_similarity(new_tfidf, ticket_tfidf)
