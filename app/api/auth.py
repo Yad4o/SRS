@@ -353,8 +353,6 @@ def get_current_user(
         )
 
 
-# require_agent_or_admin has been moved to app/api/dependencies.py
-# Import it from there to keep auth.py focused on token issuance/validation only.
 
 
 @router.get("/me", response_model=UserResponse)

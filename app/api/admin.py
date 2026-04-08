@@ -36,6 +36,7 @@ from app.models.feedback import Feedback
 from app.models.user import User
 from app.api.auth import get_current_user
 from app.constants import UserRole
+from app.schemas.admin import MetricsResponse, AdminTicketListResponse, AdminTicketItem, FiltersMeta, PaginationMeta
 from app.core.exceptions import (
     AuthorizationError,
     ValidationError,
@@ -69,7 +70,7 @@ def require_admin(current_user: User = Depends(get_current_user)) -> User:
     return current_user
 
 
-@router.get("/metrics", response_model=dict[str, Any])
+@router.get("/metrics", response_model=MetricsResponse)
 def get_metrics(
     current_user: User = Depends(require_admin),
     db: Session = Depends(get_db)
@@ -182,7 +183,7 @@ def get_metrics(
         raise InternalError("Failed to retrieve metrics") from e
 
 
-@router.get("/tickets", response_model=dict[str, Any])
+@router.get("/tickets", response_model=AdminTicketListResponse)
 def list_all_tickets(
     current_user: User = Depends(require_admin),
     db: Session = Depends(get_db),

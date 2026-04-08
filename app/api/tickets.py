@@ -55,107 +55,13 @@ from app.services.similarity_search import (
 import json
 from app.core.limiter import limiter
 from app.constants import TicketStatus, DEFAULT_PAGE_SIZE, MAX_PAGE_SIZE, UserRole
+from app.services.ticket_service import run_ticket_automation, extract_user_id_from_token, extract_user_id_and_role_from_token
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/tickets", tags=["Tickets"])
 
 # Optional OAuth2 scheme for user identification (token is optional)
 oauth2_scheme_optional = OAuth2PasswordBearer(tokenUrl="auth/login", auto_error=False)
-
-# ---------------------------------------------------------------------------
-# Internal automation helper
-# ---------------------------------------------------------------------------
- 
-def _run_ticket_automation(ticket: Ticket, db: Session) -> Ticket:
-    """
-    Run the AI automation pipeline for a given ticket.
-    - Intent classification
-    - Similarity search against resolved tickets
-    - Resolution decision (auto-resolve vs escalate)
-    - Response generation for auto-resolved tickets
-    """
-    # Classify intent
-    classification = classify_intent(ticket.message)
-    intent = classification["intent"]
-    confidence = classification["confidence"]
-    sub_intent = classification.get("sub_intent")
-
-    # Update ticket with classification results
-    ticket.intent = intent
-    ticket.confidence = confidence
-    ticket.sub_intent = sub_intent
-
-    # Fetch resolved tickets for similarity search
-    # Check cache first to avoid DB query (Issue #10)
-    cache = _get_cache_client()
-    key = _cache_key(ticket.message) if cache else None
-    similar_result = None
-    
-    if cache and key:
-        try:
-            cached = cache.get(key)
-            if cached:
-                similar_result = json.loads(cached)
-                logger.info(f"Similarity cache hit for ticket {ticket.id}")
-        except Exception:
-            pass
-
-    if similar_result is None:
-        resolved_tickets = get_resolved_tickets(db)
-
-        # Convert to list of dicts for similarity search
-        resolved_tickets_data = [
-            {"message": t.message, "response": t.response, "quality_score": t.quality_score}
-            for t in resolved_tickets
-        ]
-
-        # Find similar tickets
-        similar_result = find_similar_ticket(
-            ticket.message,
-            resolved_tickets_data,
-            similarity_threshold=settings.SIMILARITY_THRESHOLD,
-        )
-
-    # Extract similar quality score
-    similar_quality_score = similar_result.get("quality_score") if similar_result else None
-
-    # Make decision
-    decision = decide_resolution(confidence)
-
-    # Process decision
-    if decision == "AUTO_RESOLVE":
-        similar_solution = (
-            similar_result["ticket"]["response"] if similar_result else None
-        )
-        response_text, response_source = generate_response(
-            intent,
-            ticket.message,
-            similar_solution=similar_solution,
-            sub_intent=sub_intent,
-            similar_quality_score=similar_quality_score,
-        )
-        ticket.response = response_text
-        ticket.response_source = response_source
-        ticket.status = "auto_resolved"
-        logger.info(
-            f"Ticket {ticket.id} {decision.lower()} with intent {intent} "
-            f"(confidence: {confidence})"
-        )
-    else:  # ESCALATE
-        ticket.status = "escalated"
-        ticket.response = None
-        logger.info(
-            f"Ticket {ticket.id} escalated with intent {intent} "
-            f"(confidence: {confidence})"
-        )
-
-    # Save AI results
-    db.add(ticket)
-    db.commit()
-    db.refresh(ticket)
-    return ticket
-
-  
 
 
 @router.post("/", response_model=TicketResponse, status_code=status.HTTP_201_CREATED)
@@ -193,16 +99,7 @@ def create_ticket(
     """
     try:
         # Extract user_id from optional token
-        user_id = None
-        if token:
-            try:
-                payload = decode_token(token)
-                sub = payload.get("sub")
-                if sub:
-                    user_id = int(sub)
-            except Exception as e:
-                logger.debug("Token decode failed — treating as unauthenticated", exc_info=True)
-                pass  # Invalid token — treat as unauthenticated
+        user_id = extract_user_id_from_token(token)
 
         # Step 1: Create ticket with initial status
         ticket = Ticket(
@@ -218,7 +115,7 @@ def create_ticket(
         
         # Step 2: Run AI pipeline
         try:
-            ticket = _run_ticket_automation(ticket=ticket, db=db)
+            ticket = run_ticket_automation(ticket=ticket, db=db)
             
         except Exception as ai_error:
             # AI failure: escalate for safety (never block user)
@@ -277,18 +174,7 @@ def list_tickets(
     """
     try:
         # Extract user_id and role from optional token
-        user_id = None
-        user_role = None
-        if token:
-            try:
-                payload = decode_token(token)
-                sub = payload.get("sub")
-                if sub:
-                    user_id = int(sub)
-                    user_role = payload.get("role")
-            except Exception as e:
-                logger.debug("Failed to decode token, showing all tickets", exc_info=True)
-                pass  # Invalid token — show all tickets
+        user_id, user_role = extract_user_id_and_role_from_token(token)
 
         # Build query
         query = db.query(Ticket)
