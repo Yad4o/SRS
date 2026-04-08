@@ -125,6 +125,8 @@ def authenticate_user(db: Session, email: str, password: str) -> User | None:
         user = db.query(User).filter(User.email == normalized_email).first()
         if not user:
             return None
+        if not user.is_active:
+            return None
         if not verify_password(password, user.hashed_password):
             return None
         return user

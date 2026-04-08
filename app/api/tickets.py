@@ -54,6 +54,7 @@ from app.services.similarity_search import (
 )
 import json
 from app.core.limiter import limiter
+from app.constants import TicketStatus, DEFAULT_PAGE_SIZE, MAX_PAGE_SIZE, UserRole
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/tickets", tags=["Tickets"])

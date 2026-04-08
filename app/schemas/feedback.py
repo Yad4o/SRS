@@ -94,7 +94,7 @@ class FeedbackResponse(BaseModel):
 
 
 # Alias for FeedbackResponse as specified in deliverables
-FeedbackRead = FeedbackResponse
+
 
 
 class FeedbackList(BaseModel):
