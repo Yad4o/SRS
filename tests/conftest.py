@@ -109,6 +109,11 @@ class AuthHelper:
         """Create a user token for testing."""
         return AuthHelper.create_token(user_id, "user")
 
+    @staticmethod
+    def create_admin_token(user_id: str) -> str:
+        """Create an admin token for testing."""
+        return AuthHelper.create_token(user_id, "admin")
+
 
 # Enhanced fixtures
 @pytest.fixture(autouse=True)
@@ -162,6 +167,18 @@ def user_token(regular_user):
     return AuthHelper.create_user_token(str(regular_user.id))
 
 
+@pytest.fixture
+def admin_user(db):
+    """Create an admin user for testing."""
+    return DatabaseHelper.create_user(db, role="admin")
+
+
+@pytest.fixture
+def admin_token(admin_user):
+    """Create an admin token for testing."""
+    return AuthHelper.create_admin_token(str(admin_user.id))
+
+
 class BaseTestClass:
     """Base class for test classes with common functionality."""
     
@@ -201,10 +218,10 @@ class BaseTestClass:
 # Clean up the temp database file after tests
 def pytest_sessionfinish(session, exitstatus):
     """Clean up temporary database file after test session."""
-    import gc
-    gc.collect()  # Force garbage collection to close any remaining connections
-    
     try:
+        # Properly dispose the engine and close all connections
+        engine.dispose()
+        
         # Wait a moment for file handles to be released
         import time
         time.sleep(0.1)
