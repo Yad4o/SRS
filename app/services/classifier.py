@@ -10,10 +10,16 @@ def _boundary_match(keyword: str, text: str) -> bool:
     Returns:
         bool: True if keyword matches as a whole word/phrase
     """
-    # Escape special regex characters in keyword, then wrap with word boundaries.
-    # \b anchors to the boundary of the whole phrase for both single- and multi-word keywords.
     escaped_keyword = re.escape(keyword)
-    pattern = r'\b' + escaped_keyword + r'\b'
+    if ' ' in keyword:
+        # Multi-word phrase: \b boundaries require the phrase to appear literally adjacent,
+        # which breaks natural inputs like "forgot my password" vs keyword "forgot password".
+        # Use a plain substring search so the phrase only needs to be present anywhere in text.
+        pattern = escaped_keyword
+    else:
+        # Single word: enforce whole-word boundaries to avoid partial matches
+        # (e.g. "access" must not match inside "accessed").
+        pattern = r'\b' + escaped_keyword + r'\b'
     return bool(re.search(pattern, text, re.IGNORECASE))
 
 

@@ -53,8 +53,20 @@ class _RedisClientManager:
             return None
 
     def reset(self) -> None:
-        """Clear the cached client (e.g. after a connection error)."""
-        self._client = None
+        """Disconnect the connection pool and clear the cached client.
+
+        Calls ``close()`` on the synchronous client (which disconnects all
+        pooled sockets) before dropping the reference so file descriptors
+        are released promptly.  Any error from ``close()`` is suppressed —
+        the reference is always cleared via ``finally``.
+        """
+        if self._client is not None:
+            try:
+                self._client.close()
+            except Exception:
+                pass  # Already broken — nothing useful we can do
+            finally:
+                self._client = None
 
 
 _redis_manager = _RedisClientManager()
@@ -164,6 +176,7 @@ def find_similar_ticket(new_message: str, resolved_tickets: list[dict], similari
                 return None  # Message is in cache but doesn't meet this threshold
         except Exception:
             _redis_manager.reset()
+            cache = None
 
     # Extract messages from resolved tickets
     ticket_messages = []
@@ -223,6 +236,7 @@ def find_similar_ticket(new_message: str, resolved_tickets: list[dict], similari
             cache.setex(key, 300, json.dumps(raw_result, cls=SafeEncoder))
         except Exception:
             _redis_manager.reset()
+            cache = None
 
     # Check if raw result meets the requested threshold for THIS call
     if raw_result and raw_result["similarity_score"] >= similarity_threshold:
