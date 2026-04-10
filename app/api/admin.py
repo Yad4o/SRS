@@ -71,7 +71,7 @@ def require_admin(current_user: Annotated[User, Depends(get_current_user)]) -> U
 @router.get("/metrics", response_model=MetricsResponse)
 def get_metrics(
     current_user: Annotated[User, Depends(require_admin)],
-    db: Annotated[Session, Depends(get_db)] = Depends(get_db)
+    db: Session = Depends(get_db)
 ):
     """
     Retrieve high-level system metrics.
@@ -184,7 +184,7 @@ def get_metrics(
 @router.get("/tickets", response_model=AdminTicketListResponse)
 def list_all_tickets(
     current_user: Annotated[User, Depends(require_admin)],
-    db: Annotated[Session, Depends(get_db)] = Depends(get_db),
+    db: Session = Depends(get_db),
     status_filter: str | None = Query(None, alias="status", description="Filter by ticket status"),
     page: int = Query(1, ge=1, description="Page number"),
     limit: int = Query(50, ge=1, le=100, description="Items per page")

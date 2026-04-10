@@ -41,7 +41,7 @@ router = APIRouter(
 @router.post("/", status_code=status.HTTP_201_CREATED, response_model=FeedbackResponse)
 def create_feedback(
     feedback_data: FeedbackCreate,
-    db: Annotated[Session, Depends(get_db)] = Depends(get_db),
+    db: Session = Depends(get_db),
 ):
     """
     Create feedback for a resolved ticket.
@@ -103,7 +103,7 @@ def create_feedback(
 @router.get("/{ticket_id}", response_model=FeedbackResponse)
 def get_feedback_by_ticket_id(
     ticket_id: int,
-    db: Annotated[Session, Depends(get_db)] = Depends(get_db),
+    db: Session = Depends(get_db),
 ):
     """
     Retrieve feedback for a specific ticket by ticket ID.
@@ -144,7 +144,7 @@ def get_feedback_by_ticket_id(
 @router.get("/", response_model=FeedbackResponse)
 def get_feedback_by_query(
     ticket_id: int = Query(..., description="ID of the ticket to get feedback for"),
-    db: Annotated[Session, Depends(get_db)] = Depends(get_db),
+    db: Session = Depends(get_db),
 ):
     """
     Retrieve feedback for a ticket using query parameter.

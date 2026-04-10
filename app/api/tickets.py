@@ -63,8 +63,8 @@ oauth2_scheme_optional = OAuth2PasswordBearer(tokenUrl="auth/login", auto_error=
 def create_ticket(
     request: Request,
     ticket_data: TicketCreate,
-    db: Annotated[Session, Depends(get_db)],
-    token: Annotated[str | None, Depends(oauth2_scheme_optional)] = Depends(oauth2_scheme_optional),
+    db: Session = Depends(get_db),
+    token: str | None = Depends(oauth2_scheme_optional),
 ) -> TicketResponse:
     """
     Create a new support ticket with AI automation.
@@ -150,8 +150,8 @@ def list_tickets(
     ),
     limit: int = Query(50, ge=1, le=100),
     offset: int = Query(0, ge=0),
-    db: Annotated[Session, Depends(get_db)] = Depends(get_db),
-    token: Annotated[str | None, Depends(oauth2_scheme_optional)] = Depends(oauth2_scheme_optional),
+    db: Session = Depends(get_db),
+    token: str | None = Depends(oauth2_scheme_optional),
 ) -> TicketList:
     """
     List all tickets with optional status filtering.
@@ -226,7 +226,7 @@ def tickets_health():
 @router.get("/{ticket_id}", response_model=TicketResponse)
 def get_ticket(
     ticket_id: int,
-    db: Annotated[Session, Depends(get_db)] = Depends(get_db),
+    db: Session = Depends(get_db),
 ) -> TicketResponse:
     """
     Retrieve a single ticket by ID.
@@ -267,8 +267,8 @@ def get_ticket(
 @router.post("/{ticket_id}/assign", response_model=TicketResponse)
 def assign_ticket(
     ticket_id: int,
-    db: Annotated[Session, Depends(get_db)] = Depends(get_db),
-    current_user: Annotated[User, Depends(require_agent_or_admin)] = Depends(require_agent_or_admin)
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_agent_or_admin)
 ) -> TicketResponse:
     """
     Assign an escalated ticket to the current agent/admin.
@@ -362,8 +362,8 @@ def assign_ticket(
 @router.post("/{ticket_id}/close", response_model=TicketResponse)
 def close_ticket(
     ticket_id: int,
-    db: Annotated[Session, Depends(get_db)] = Depends(get_db),
-    current_user: Annotated[User, Depends(require_agent_or_admin)] = Depends(require_agent_or_admin)
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_agent_or_admin)
 ) -> TicketResponse:
     """
     Close an escalated or auto_resolved ticket.
@@ -446,7 +446,7 @@ def close_ticket(
 def create_ticket_feedback(
     ticket_id: int,
     feedback_data: FeedbackCreateNested,
-    db: Annotated[Session, Depends(get_db)] = Depends(get_db),
+    db: Session = Depends(get_db),
 ) -> FeedbackResponse:
     """
     Create feedback for a resolved ticket.
