@@ -2,38 +2,33 @@
 app/core/security.py
 
 Purpose:
---------
 Security utilities for the application.
 Provides password hashing/verification and JWT token creation/decoding.
 
-Owner:
-------
-Om (Backend / System)
-
 Responsibilities:
------------------
 - Hash and verify passwords using bcrypt via passlib
 - Create and decode JWT access tokens using python-jose
 - Read security configuration from settings
 
 DO NOT:
--------
 - Store state here
 - Access database directly
 - Implement auth business logic (that belongs in app/api/auth.py)
 
 References:
------------
 - Technical Spec § 10.1 (Authentication)
 - Technical Spec § 10.2 (Password Handling)
 """
 
+import logging
 from datetime import datetime, timedelta, timezone
 
 from jose import JWTError, jwt
 from passlib.context import CryptContext
 
 from app.core.config import settings
+
+logger = logging.getLogger(__name__)
 
 # -------------------------------------------------
 # Password Hashing
@@ -78,13 +73,9 @@ def _truncate_password_for_bcrypt(plain_password: str) -> str:
         Password truncated to maximum 72 bytes
     """
     # bcrypt has a 72-byte limit for passwords
-    original_length = len(plain_password)
     original_bytes = len(plain_password.encode('utf-8'))
     
     if original_bytes > 72:
-        import logging
-        logger = logging.getLogger(__name__)
-        
         # Find the character position that keeps us within 72 bytes
         truncated_password = ""
         byte_count = 0
@@ -94,12 +85,10 @@ def _truncate_password_for_bcrypt(plain_password: str) -> str:
                 break
             truncated_password += char
             byte_count += len(char_bytes)
-        
+
         # Log the truncation for security monitoring (without revealing length details)
-        logger.warning(
-            "Password truncated to fit bcrypt 72-byte limit for security"
-        )
-        
+        logger.warning("Password truncated to fit bcrypt 72-byte limit for security")
+
         return truncated_password
     
     return plain_password
@@ -220,3 +209,4 @@ def decode_token(token: str) -> dict:
     except (JWTError, ValueError, UnicodeDecodeError) as e:
         # Re-raise JWT errors to ensure proper handling upstream
         raise JWTError(f"Invalid token: {str(e)}") from e
+

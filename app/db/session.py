@@ -2,15 +2,9 @@
 app/db/session.py
 
 Purpose:
---------
 Database engine and session management for the application.
 
-Owner:
-------
-Om (Backend / System)
-
 Responsibilities:
------------------
 - Create SQLAlchemy engine (connection pool)
 - Provide session factory (SessionLocal)
 - Expose Base class for ORM models (User, Ticket, Feedback)
@@ -20,7 +14,6 @@ Responsibilities:
 Reference: docs/specification/TECHNICAL_SPEC.md § 5.3 Data Layer
 
 DO NOT:
--------
 - Define models here (use app/models/)
 - Write business queries here (use repositories or services)
 - Commit transactions in this file
@@ -100,7 +93,6 @@ def get_db() -> Generator[Session, None, None]:
     FastAPI dependency that provides a database session per request.
 
     Usage in route handlers:
-    -----------------------
         from fastapi import Depends
         from sqlalchemy.orm import Session
 
@@ -109,7 +101,6 @@ def get_db() -> Generator[Session, None, None]:
             return db.query(Ticket).all()
 
     Lifecycle:
-    ----------
     - Session created when request starts
     - Yielded to the route handler
     - Closed in `finally` when request ends (even on error)
@@ -137,3 +128,4 @@ def init_db() -> None:
     from app.models import feedback, ticket, user
 
     Base.metadata.create_all(bind=engine)
+

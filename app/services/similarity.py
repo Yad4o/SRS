@@ -1,17 +1,25 @@
 """
-app/services/similarity.py
+app/services/similarity.py  [DEPRECATED]
 
-Purpose:
---------
-Re-export of find_similar_ticket to match the module name defined in the Phase 3 spec.
-Canonical implementation lives in similarity_search.py.
+Deprecated:
+This module is a Phase 3 spec alias. Import directly from the canonical module instead:
 
-Owner:
-------
-Prajwal (AI / NLP / Similarity Search)
+    from app.services.similarity_search import find_similar_ticket
+
+This file will be removed in a future release.
 """
 
-# Canonical implementation — delegates to similarity_search.py
-from app.services.similarity_search import find_similar_ticket
+import warnings
+
+warnings.warn(
+    "Importing from 'app.services.similarity' is deprecated. "
+    "Use 'app.services.similarity_search' instead. "
+    "This alias will be removed in a future release.",
+    DeprecationWarning,
+    stacklevel=2,
+)
+
+from app.services.similarity_search import find_similar_ticket  # noqa: E402, F401
 
 __all__ = ["find_similar_ticket"]
+

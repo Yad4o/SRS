@@ -2,21 +2,14 @@
 app/models/ticket.py
 
 Purpose:
---------
 Defines the Ticket database model.
 
-Owner:
-------
-Om (Backend / Data Modeling)
-
 Responsibilities:
------------------
 - Represent customer support tickets
 - Store AI classification results
 - Track ticket lifecycle status
 
 DO NOT:
--------
 - Perform AI classification here
 - Implement resolution logic here
 - Write database queries here
@@ -26,6 +19,7 @@ from datetime import datetime, timezone
 from sqlalchemy import Boolean, Column, Integer, String, Float, DateTime, ForeignKey
 from sqlalchemy.orm import relationship
 
+from app.constants import TicketStatus
 from app.db.session import Base
 
 
@@ -42,7 +36,7 @@ class Ticket(Base):
     def __init__(self, **kwargs):
         """Initialize Ticket with default status if not provided."""
         if 'status' not in kwargs:
-            kwargs['status'] = 'open'
+            kwargs['status'] = TicketStatus.OPEN.value
         super().__init__(**kwargs)
 
     # -------------------------------------------------
@@ -82,7 +76,7 @@ class Ticket(Base):
 
     status = Column(
         String,
-        default="open",
+        default=TicketStatus.OPEN.value,
         nullable=False,
         doc="Ticket status: open | auto_resolved | escalated | closed",
     )
@@ -146,3 +140,4 @@ class Ticket(Base):
 
     user = relationship("User", foreign_keys=[user_id])
     assigned_agent = relationship("User", foreign_keys=[assigned_agent_id])
+

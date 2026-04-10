@@ -109,6 +109,11 @@ class AuthHelper:
         """Create a user token for testing."""
         return AuthHelper.create_token(user_id, "user")
 
+    @staticmethod
+    def create_admin_token(user_id: str) -> str:
+        """Create an admin token for testing."""
+        return AuthHelper.create_token(user_id, "admin")
+
 
 # Enhanced fixtures
 @pytest.fixture(autouse=True)
@@ -129,7 +134,7 @@ def db():
         db.close()
 
 
-@pytest.fixture
+@pytest.fixture(autouse=True)
 def reset_limiter():
     """Reset rate limiter between tests."""
     from app.core.limiter import limiter
@@ -162,6 +167,18 @@ def user_token(regular_user):
     return AuthHelper.create_user_token(str(regular_user.id))
 
 
+@pytest.fixture
+def admin_user(db):
+    """Create an admin user for testing."""
+    return DatabaseHelper.create_user(db, role="admin")
+
+
+@pytest.fixture
+def admin_token(admin_user):
+    """Create an admin token for testing."""
+    return AuthHelper.create_admin_token(str(admin_user.id))
+
+
 class BaseTestClass:
     """Base class for test classes with common functionality."""
     
@@ -174,11 +191,19 @@ class BaseTestClass:
         assert "created_at" in data
     
     @staticmethod
-    def assert_error_response(response, expected_status: int, expected_detail: str = None):
+    def assert_error_response(response, expected_status: int, expected_message: Optional[str] = None):
         """Assert error response structure."""
         assert response.status_code == expected_status
-        if expected_detail:
-            assert expected_detail in response.json().get("detail", "")
+        if expected_message:
+            data = response.json()
+            if "error" in data:
+                error_val = data.get("error")
+                actual_msg = error_val.get("message", "") if isinstance(error_val, dict) else str(error_val)
+            else:
+                actual_msg = data.get("detail", "")
+                if isinstance(actual_msg, list):
+                    actual_msg = str(actual_msg)
+            assert expected_message.lower() in actual_msg.lower()
     
     @staticmethod
     def create_mock_ticket():
@@ -193,10 +218,10 @@ class BaseTestClass:
 # Clean up the temp database file after tests
 def pytest_sessionfinish(session, exitstatus):
     """Clean up temporary database file after test session."""
-    import gc
-    gc.collect()  # Force garbage collection to close any remaining connections
-    
     try:
+        # Properly dispose the engine and close all connections
+        engine.dispose()
+        
         # Wait a moment for file handles to be released
         import time
         time.sleep(0.1)

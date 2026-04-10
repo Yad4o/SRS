@@ -22,9 +22,8 @@ def test_cache_prevents_duplicate_db_queries():
     ]
 
     try:
-        # Patch redis.from_url at the source library to ensure the mock is injected 
-        # even with lazy imports inside the function.
-        with patch("redis.from_url", return_value=mock_cache):
+        # Patch _get_cache_client to bypass the missing redis library check completely
+        with patch("app.services.similarity_search._get_cache_client", return_value=mock_cache):
             with patch("app.core.config.settings") as mock_settings:
                 mock_settings.REDIS_URL = "redis://localhost"
                 mock_settings.SIMILARITY_THRESHOLD = 0.5

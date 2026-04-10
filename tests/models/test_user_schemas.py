@@ -97,9 +97,9 @@ class TestUserCreate:
             UserCreate(email="newuser@example.com")
 
     def test_usercreate_has_only_expected_fields(self):
-        """UserCreate should only expose email and password."""
+        """UserCreate should expose email, password, and role."""
         fields = set(UserCreate.model_fields.keys())
-        assert fields == {"email", "password"}
+        assert fields == {"email", "password", "role"}
 
     def test_usercreate_accepts_mixed_case_email(self):
         """Pydantic v2 EmailStr validates format but normalizes domain case."""

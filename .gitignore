@@ -25,3 +25,9 @@ feedback_analysis.json
 metrics.json
 metrics_*.json
 support.db
+
+# Temporary debug / test output files (never commit these)
+tmp_*.txt
+tmp_*.py
+run_tests.py
+act.ps1

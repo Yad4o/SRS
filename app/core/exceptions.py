@@ -2,27 +2,20 @@
 app/core/exceptions.py
 
 Purpose:
---------
 Define custom exception classes for consistent error handling across the API.
 
-Owner:
-------
-Backend Team
-
 Responsibilities:
------------------
 - Define application-specific exception types
 - Map error types to HTTP status codes
 - Provide consistent error structure for API responses
 
 DO NOT:
--------
 - Include sensitive internal information in error messages
 - Expose stack traces or implementation details
 - Use generic exceptions for business logic errors
 """
 
-from typing import Optional, Dict, Any
+from typing import Any
 
 
 class BaseAPIException(Exception):
@@ -32,8 +25,8 @@ class BaseAPIException(Exception):
         self,
         message: str,
         status_code: int = 500,
-        error_code: Optional[str] = None,
-        details: Optional[Dict[str, Any]] = None
+        error_code: str | None = None,
+        details: dict[str, Any] | None = None
     ):
         self.message = message
         self.status_code = status_code
@@ -45,7 +38,7 @@ class BaseAPIException(Exception):
 class AppValidationError(BaseAPIException):
     """Raised when request validation fails."""
 
-    def __init__(self, message: str, details: Optional[Dict[str, Any]] = None):
+    def __init__(self, message: str, details: dict[str, Any] | None = None):
         super().__init__(
             message=message,
             status_code=400,
@@ -112,7 +105,7 @@ class AIServiceError(BaseAPIException):
     behaviour (200), not the conventional 503.
     """
 
-    def __init__(self, message: str = "AI service temporarily unavailable", details: Optional[Dict[str, Any]] = None, retry_after: Optional[int] = None):
+    def __init__(self, message: str = "AI service temporarily unavailable", details: dict[str, Any] | None = None, retry_after: int | None = None):
         new_details = dict(details) if details is not None else {}
         if retry_after is not None:
             new_details["retry_after"] = retry_after
@@ -164,7 +157,7 @@ ERROR_RESPONSE_STATUS_MAPPING = {
 def create_error_response(
     error: BaseAPIException,
     include_details: bool = False
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     """
     Create standardized error response.
     
@@ -188,3 +181,4 @@ def create_error_response(
         response["error"]["details"] = error.details
     
     return response
+

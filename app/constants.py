@@ -2,15 +2,10 @@
 app/constants.py
 
 Purpose:
---------
 Centralized constants for the application.
-
-Owner:
-------
 Application Constants
 
 Responsibilities:
------------------
 - Magic numbers
 - Default values
 - Error messages
@@ -18,7 +13,7 @@ Responsibilities:
 """
 
 from enum import Enum
-from typing import Dict, Any
+
 
 # Ticket statuses
 class TicketStatus(str, Enum):
@@ -37,8 +32,7 @@ class UserRole(str, Enum):
 DEFAULT_PAGE_SIZE = 50
 MAX_PAGE_SIZE = 100
 
-# Rate limiting
-RATE_LIMIT_PER_MINUTE = 60
+
 
 # Similarity thresholds
 DEFAULT_SIMILARITY_THRESHOLD = 0.8
@@ -49,66 +43,28 @@ MAX_SIMILARITY_THRESHOLD = 1.0
 CACHE_TTL_SECONDS = 3600  # 1 hour
 CACHE_KEY_PREFIX = "srs"
 
-# Error messages
-ERROR_MESSAGES = {
-    "validation_failed": "Validation failed",
-    "not_found": "Resource not found",
-    "unauthorized": "Unauthorized access",
-    "forbidden": "Access forbidden",
-    "database_error": "Database operation failed",
-    "internal_error": "Internal server error",
-    "rate_limit_exceeded": "Rate limit exceeded",
-    "invalid_input": "Invalid input provided",
-}
+# Auth error messages
+AUTH_SERVICE_UNAVAILABLE = "Authentication service temporarily unavailable"
+INCORRECT_CREDENTIALS = "Incorrect email or password"
+EMAIL_ALREADY_REGISTERED = "Email already registered"
+EMAIL_PASSWORD_REQUIRED = "Email and password are required"
+INVALID_DEFAULT_ROLE = "Invalid default role configuration"
+COULD_NOT_VALIDATE_CREDENTIALS = "Could not validate credentials"
+EMAIL_NOT_FOUND = "Email address not found"
+INVALID_OTP = "Invalid or expired OTP"
+OTP_EXPIRED = "OTP has expired"
+MAX_OTP_ATTEMPTS = "Maximum OTP attempts exceeded. Please request a new OTP"
+EMAIL_SEND_FAILED = "Failed to send OTP email. Please try again"
 
-# Success messages
-SUCCESS_MESSAGES = {
-    "ticket_created": "Ticket created successfully",
-    "ticket_updated": "Ticket updated successfully",
-    "ticket_closed": "Ticket closed successfully",
-    "user_created": "User created successfully",
-    "operation_successful": "Operation completed successfully",
-}
-
-# Response templates
-class ResponseTemplates:
-    """Template responses for common scenarios."""
-    
-    LOGIN_ISSUES = [
-        # Password reset
-        "It looks like you need to reset your password. Click 'Forgot Password' on the login page "
-        "and follow the instructions. Note that the reset link expires in 15 minutes, so act quickly. "
-        "If the email doesn't arrive, please check your spam or junk folder.",
-        
-        # Account locked
-        "Your account may be temporarily locked after too many failed attempts. Please wait 30 minutes "
-        "before trying again. If you have two-factor authentication (2FA) enabled, make sure you're "
-        "entering the latest code from your authenticator app. If you're still locked out, our support "
-        "team can unlock your account manually — just reach out.",
-        
-        # General login help
-        "Please double-check the email address you're signing in with — it's easy to mix up similar "
-        "addresses. Also check for any accidental leading or trailing spaces in your password field. "
-        "If you originally signed up via Google or another social provider, try that sign-in option "
-        "instead of entering a password directly.",
-    ]
-    
-    PAYMENT_ISSUES = [
-        # Refund inquiry
-        "For refund requests, please allow 3-5 business days for processing. If you haven't received "
-        "your refund after this period, please contact our billing department with your order number "
-        "and transaction date.",
-        
-        # Payment failure
-        "Payment failures can occur due to various reasons. Please check that your card details are "
-        "correct, that you have sufficient funds, and that your bank hasn't blocked the transaction. "
-        "Try using a different payment method if the issue persists.",
-    ]
-    
-    GENERAL_HELP = [
-        "Thank you for contacting us. We've received your message and will respond within 24 hours. "
-        "For urgent matters, please call our support hotline at 1-800-SUPPORT.",
-    ]
+# General error messages
+VALIDATION_FAILED = "Validation failed"
+NOT_FOUND = "Resource not found"
+UNAUTHORIZED = "Unauthorized access"
+FORBIDDEN = "Access forbidden"
+DATABASE_ERROR = "Database operation failed"
+INTERNAL_ERROR = "Internal server error"
+RATE_LIMIT_EXCEEDED = "Rate limit exceeded"
+INVALID_INPUT = "Invalid input provided"
 
 # Configuration defaults
 DEFAULT_CONFIG = {
@@ -125,32 +81,7 @@ VALIDATION_PATTERNS = {
     "ticket_id": r'^\d+$',
 }
 
-# Database settings
-DATABASE_POOL_SIZE = 10
-DATABASE_MAX_OVERFLOW = 20
 
-# Logging levels
-LOG_LEVELS = {
-    "DEBUG": 10,
-    "INFO": 20,
-    "WARNING": 30,
-    "ERROR": 40,
-    "CRITICAL": 50,
-}
-
-# API response codes
-API_CODES = {
-    "SUCCESS": 200,
-    "CREATED": 201,
-    "BAD_REQUEST": 400,
-    "UNAUTHORIZED": 401,
-    "FORBIDDEN": 403,
-    "NOT_FOUND": 404,
-    "CONFLICT": 409,
-    "UNPROCESSABLE_ENTITY": 422,
-    "RATE_LIMITED": 429,
-    "INTERNAL_ERROR": 500,
-}
 
 # Feature flags
 FEATURE_FLAGS = {
@@ -181,13 +112,17 @@ __all__ = [
     "UserRole", 
     "DEFAULT_PAGE_SIZE",
     "MAX_PAGE_SIZE",
-    "RATE_LIMIT_PER_MINUTE",
-    "DEFAULT_SIMILARITY_THRESHOLD",
-    "ERROR_MESSAGES",
-    "SUCCESS_MESSAGES",
-    "ResponseTemplates",
-    "DEFAULT_CONFIG",
-    "VALIDATION_PATTERNS",
-    "API_CODES",
+
     "FEATURE_FLAGS",
+    "AUTH_SERVICE_UNAVAILABLE",
+    "INCORRECT_CREDENTIALS",
+    "EMAIL_ALREADY_REGISTERED",
+    "EMAIL_PASSWORD_REQUIRED",
+    "COULD_NOT_VALIDATE_CREDENTIALS",
+    "EMAIL_NOT_FOUND",
+    "INVALID_OTP",
+    "OTP_EXPIRED",
+    "MAX_OTP_ATTEMPTS",
+    "EMAIL_SEND_FAILED",
 ]
+

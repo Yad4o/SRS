@@ -2,22 +2,15 @@
 app/services/response_generator.py
 
 Purpose:
---------
 Generates human-readable responses for customer support tickets.
 
-Owner:
-------
-Om (Backend / Response Generation)
-
 Responsibilities:
------------------
 - Generate responses based on intent and sub-intent
 - Handle similarity-based responses with quality scoring
 - Integrate OpenAI API with proper fallback chain
 - Ensure system never fails due to AI unavailability
 
 DO NOT:
--------
 - Make decisions about ticket resolution
 - Update database directly
 - Access external APIs directly (except OpenAI)
@@ -437,3 +430,4 @@ _sub_intent_to_index: dict[str, dict[str, int]] = {
         "contact":           2,
     },
 }
+

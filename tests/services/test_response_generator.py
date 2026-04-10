@@ -81,6 +81,9 @@ def test_generate_response_similarity_priority():
             
             # Should use similar solution (sanitized to 500 chars)
             assert source_label == "similarity"
+            mock_call_openai.assert_not_called()
+            assert "I understand you're experiencing an issue" in response_text
+            assert "Based on a similar case" in response_text
             assert "Use the forgot password link" in response_text
             assert len(response_text) <= 500 + len("I understand you're experiencing an issue. Based on a similar case, here's what helped: ")
 

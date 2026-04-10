@@ -24,16 +24,10 @@ from slowapi import _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
 from app.core.limiter import limiter
 
-# TODO (later): import routers when they are implemented
-# from app.api import tickets, feedback, admin
-
-
-from app.core.config import settings
-from app.db.session import engine, init_db
-from app.core.error_handlers import setup_exception_handlers
-
-# from app.api import tickets, feedback, admin
 from app.api import auth, demo, tickets, feedback, admin
+from app.core.config import settings
+from app.core.error_handlers import setup_exception_handlers
+from app.db.session import engine, init_db
 
 
 # --------------------------------------------------
@@ -100,7 +94,7 @@ def create_app() -> FastAPI:
     # Production configuration for Vercel frontend
     app.add_middleware(
         CORSMiddleware,
-        allow_origins=[
+        allow_origins=settings.CORS_ORIGINS if settings.CORS_ORIGINS else [
             "https://srs-frontend-rho.vercel.app",
             "http://localhost:3000",  # Local development
             "http://localhost:5173",  # Vite dev server
@@ -129,12 +123,9 @@ def create_app() -> FastAPI:
     #   feedback → user feedback
     #   admin    → admin metrics & controls
 
-    # TODO: Uncomment these once routers are implemented
     app.include_router(tickets.router, tags=["Tickets"])
     app.include_router(feedback.router, tags=["Feedback"])
     app.include_router(admin.router, tags=["Admin"])
-    
-    # Authentication endpoints
     app.include_router(auth.router)
     
     # Demo endpoints — only mount in non-production environments.

@@ -1,3 +1,4 @@
+import warnings
 from typing import Literal
 from app.core.config import settings
 
@@ -54,18 +55,40 @@ def get_confidence_threshold() -> float:
 def set_confidence_threshold(threshold: float) -> None:
     """
     Set the confidence threshold for auto-resolution.
-    
-    Note: This is for testing/configuration purposes only.
-    In production, the threshold should come from settings.
+
+    .. deprecated::
+        Mutating ``settings`` at runtime is unsafe in production.
+        Configure ``CONFIDENCE_THRESHOLD_AUTO_RESOLVE`` via environment
+        variables or your secrets manager instead.
+
+    Raises:
+        RuntimeError: If called outside a test or development environment.
+        ValueError: If the threshold is not a float in [0.0, 1.0].
     """
+    warnings.warn(
+        "set_confidence_threshold() mutates global settings at runtime and is "
+        "deprecated. Set CONFIDENCE_THRESHOLD_AUTO_RESOLVE via environment "
+        "variables or your secrets manager instead.",
+        DeprecationWarning,
+        stacklevel=2,
+    )
+
+    env = getattr(settings, "ENV", "production").lower()
+    if env not in ("test", "testing", "development", "dev"):
+        raise RuntimeError(
+            "set_confidence_threshold() must not be called in a production environment. "
+            f"Current ENV='{env}'."
+        )
+
     if not isinstance(threshold, (int, float)):
         raise ValueError("Threshold must be a numeric value")
-    
+
     if isinstance(threshold, bool):
         raise ValueError("Threshold must be a numeric value, not boolean")
-    
+
     if not (0.0 <= threshold <= 1.0):
         raise ValueError("Threshold must be between 0.0 and 1.0")
-    
-    # Update the settings object (for testing only)
+
+    # Update the settings object (test/dev only)
     settings.CONFIDENCE_THRESHOLD_AUTO_RESOLVE = threshold
+

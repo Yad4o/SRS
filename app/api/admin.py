@@ -2,32 +2,25 @@
 app/api/admin.py
 
 Purpose:
---------
 Defines admin-level API endpoints for system monitoring and metrics.
 
-Owner:
-------
-Om (Backend / Admin APIs)
-
 Responsibilities:
------------------
 - Provide system-level metrics
 - Expose aggregated ticket statistics
 - Support operational monitoring
 - Restrict access to admin users only
 
 DO NOT:
--------
 - Implement ticket resolution here
 - Modify AI behavior here
 - Expose sensitive personal data
 - Allow non-admin access
 """
 
-from typing import Optional, Dict, Any
 from fastapi import APIRouter, Depends, HTTPException, status, Query
 from sqlalchemy.orm import Session
 from sqlalchemy import func, Integer
+from typing import Annotated, Any
 import logging
 
 from app.db.session import get_db
@@ -35,6 +28,8 @@ from app.models.ticket import Ticket
 from app.models.feedback import Feedback
 from app.models.user import User
 from app.api.auth import get_current_user
+from app.constants import UserRole, TicketStatus
+from app.schemas.admin import MetricsResponse, AdminTicketListResponse, AdminTicketItem, FiltersMeta, PaginationMeta
 from app.core.exceptions import (
     AuthorizationError,
     ValidationError,
@@ -45,12 +40,17 @@ from app.core.exceptions import (
 logger = logging.getLogger(__name__)
 
 # Allowed ticket statuses for validation
-ALLOWED_TICKET_STATUSES = {"open", "auto_resolved", "escalated", "closed"}
+ALLOWED_TICKET_STATUSES = {
+    TicketStatus.OPEN.value,
+    TicketStatus.AUTO_RESOLVED.value,
+    TicketStatus.ESCALATED.value,
+    TicketStatus.CLOSED.value
+}
 
 router = APIRouter(prefix="/admin", tags=["Admin"])
 
 
-def require_admin(current_user: User = Depends(get_current_user)) -> User:
+def require_admin(current_user: Annotated[User, Depends(get_current_user)]) -> User:
     """
     Dependency to ensure current user has admin role.
     
@@ -63,15 +63,15 @@ def require_admin(current_user: User = Depends(get_current_user)) -> User:
     Raises:
         AuthorizationError: If user is not admin
     """
-    if current_user.role != "admin":
+    if current_user.role != UserRole.ADMIN.value:
         raise AuthorizationError("Access denied. Admin role required.")
     return current_user
 
 
-@router.get("/metrics", response_model=Dict[str, Any])
+@router.get("/metrics", response_model=MetricsResponse)
 def get_metrics(
-    current_user: User = Depends(require_admin),
-    db: Session = Depends(get_db)
+    current_user: Annotated[User, Depends(require_admin)],
+    db: Annotated[Session, Depends(get_db)] = Depends(get_db)
 ):
     """
     Retrieve high-level system metrics.
@@ -108,9 +108,9 @@ def get_metrics(
         
         status_counts = {status: count for status, count in tickets_by_status}
         
-        auto_resolved = status_counts.get("auto_resolved", 0)
-        escalated = status_counts.get("escalated", 0)
-        open_tickets = status_counts.get("open", 0)
+        auto_resolved = status_counts.get(TicketStatus.AUTO_RESOLVED.value, 0)
+        escalated = status_counts.get(TicketStatus.ESCALATED.value, 0)
+        open_tickets = status_counts.get(TicketStatus.OPEN.value, 0)
         
         # Calculate rates (avoid division by zero)
         auto_resolve_rate = (auto_resolved / total_tickets * 100) if total_tickets > 0 else 0
@@ -118,7 +118,7 @@ def get_metrics(
         
         # Count unassigned escalated tickets
         unassigned_escalated = db.query(Ticket).filter(
-            Ticket.status == "escalated",
+            Ticket.status == TicketStatus.ESCALATED.value,
             Ticket.assigned_agent_id.is_(None)
         ).count()
         
@@ -181,11 +181,11 @@ def get_metrics(
         raise InternalError("Failed to retrieve metrics") from e
 
 
-@router.get("/tickets", response_model=Dict[str, Any])
+@router.get("/tickets", response_model=AdminTicketListResponse)
 def list_all_tickets(
-    current_user: User = Depends(require_admin),
-    db: Session = Depends(get_db),
-    status_filter: Optional[str] = Query(None, alias="status", description="Filter by ticket status"),
+    current_user: Annotated[User, Depends(require_admin)],
+    db: Annotated[Session, Depends(get_db)] = Depends(get_db),
+    status_filter: str | None = Query(None, alias="status", description="Filter by ticket status"),
     page: int = Query(1, ge=1, description="Page number"),
     limit: int = Query(50, ge=1, le=100, description="Items per page")
 ):
@@ -272,3 +272,4 @@ def list_all_tickets(
     except Exception as e:
         logger.exception("Failed to retrieve admin tickets list")
         raise InternalError("Failed to retrieve tickets") from e
+

@@ -2,31 +2,25 @@
 app/api/tickets.py
 
 Purpose:
---------
 Defines API endpoints for managing support tickets.
 
-Owner:
-------
-Om (Backend / Core API)
-
 Responsibilities:
------------------
 - Create support tickets
 - Retrieve ticket information
 - Trigger automated ticket resolution workflow
 
 DO NOT:
--------
 - Implement AI classification here
 - Implement resolution decision logic here
 - Access external APIs directly here
 """
 
-from typing import List, Optional
+
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 from fastapi.security import OAuth2PasswordBearer
 from sqlalchemy import update
 from sqlalchemy.orm import Session
+from typing import Annotated
 import logging
 
 from app.schemas.ticket import (
@@ -38,6 +32,7 @@ from app.schemas.feedback import FeedbackCreate, FeedbackResponse, FeedbackCreat
 from app.models.ticket import Ticket
 from app.models.user import User
 from app.models.feedback import Feedback
+from app.services.feedback_service import create_feedback_record
 from app.services.classifier import classify_intent
 from app.services.response_generator import generate_response
 from app.services.decision_engine import decide_resolution
@@ -53,6 +48,8 @@ from app.services.similarity_search import (
 )
 import json
 from app.core.limiter import limiter
+from app.constants import TicketStatus, DEFAULT_PAGE_SIZE, MAX_PAGE_SIZE, UserRole
+from app.services.ticket_service import run_ticket_automation, extract_user_id_from_token, extract_user_id_and_role_from_token
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/tickets", tags=["Tickets"])
@@ -60,109 +57,14 @@ router = APIRouter(prefix="/tickets", tags=["Tickets"])
 # Optional OAuth2 scheme for user identification (token is optional)
 oauth2_scheme_optional = OAuth2PasswordBearer(tokenUrl="auth/login", auto_error=False)
 
-# ---------------------------------------------------------------------------
-# Internal automation helper
-# ---------------------------------------------------------------------------
- 
-def _run_ticket_automation(ticket: Ticket, db: Session) -> Ticket:
-    """
-    Run the AI automation pipeline for a given ticket.
-    - Intent classification
-    - Similarity search against resolved tickets
-    - Resolution decision (auto-resolve vs escalate)
-    - Response generation for auto-resolved tickets
-    """
-    # Classify intent
-    classification = classify_intent(ticket.message)
-    intent = classification["intent"]
-    confidence = classification["confidence"]
-    sub_intent = classification.get("sub_intent")
-
-    # Update ticket with classification results
-    ticket.intent = intent
-    ticket.confidence = confidence
-    ticket.sub_intent = sub_intent
-
-    # Fetch resolved tickets for similarity search
-    # Check cache first to avoid DB query (Issue #10)
-    cache = _get_cache_client()
-    key = _cache_key(ticket.message) if cache else None
-    similar_result = None
-    
-    if cache and key:
-        try:
-            cached = cache.get(key)
-            if cached:
-                similar_result = json.loads(cached)
-                logger.info(f"Similarity cache hit for ticket {ticket.id}")
-        except Exception:
-            pass
-
-    if similar_result is None:
-        resolved_tickets = get_resolved_tickets(db)
-
-        # Convert to list of dicts for similarity search
-        resolved_tickets_data = [
-            {"message": t.message, "response": t.response, "quality_score": t.quality_score}
-            for t in resolved_tickets
-        ]
-
-        # Find similar tickets
-        similar_result = find_similar_ticket(
-            ticket.message,
-            resolved_tickets_data,
-            similarity_threshold=settings.SIMILARITY_THRESHOLD,
-        )
-
-    # Extract similar quality score
-    similar_quality_score = similar_result.get("quality_score") if similar_result else None
-
-    # Make decision
-    decision = decide_resolution(confidence)
-
-    # Process decision
-    if decision == "AUTO_RESOLVE":
-        similar_solution = (
-            similar_result["ticket"]["response"] if similar_result else None
-        )
-        response_text, response_source = generate_response(
-            intent,
-            ticket.message,
-            similar_solution=similar_solution,
-            sub_intent=sub_intent,
-            similar_quality_score=similar_quality_score,
-        )
-        ticket.response = response_text
-        ticket.response_source = response_source
-        ticket.status = "auto_resolved"
-        logger.info(
-            f"Ticket {ticket.id} {decision.lower()} with intent {intent} "
-            f"(confidence: {confidence})"
-        )
-    else:  # ESCALATE
-        ticket.status = "escalated"
-        ticket.response = None
-        logger.info(
-            f"Ticket {ticket.id} escalated with intent {intent} "
-            f"(confidence: {confidence})"
-        )
-
-    # Save AI results
-    db.add(ticket)
-    db.commit()
-    db.refresh(ticket)
-    return ticket
-
-  
-
 
 @router.post("/", response_model=TicketResponse, status_code=status.HTTP_201_CREATED)
 @limiter.limit(f"{settings.RATE_LIMIT_PER_MINUTE}/minute")
 def create_ticket(
     request: Request,
     ticket_data: TicketCreate,
-    db: Session = Depends(get_db),
-    token: Optional[str] = Depends(oauth2_scheme_optional),
+    db: Annotated[Session, Depends(get_db)],
+    token: Annotated[str | None, Depends(oauth2_scheme_optional)] = Depends(oauth2_scheme_optional),
 ) -> TicketResponse:
     """
     Create a new support ticket with AI automation.
@@ -191,21 +93,12 @@ def create_ticket(
     """
     try:
         # Extract user_id from optional token
-        user_id = None
-        if token:
-            try:
-                payload = decode_token(token)
-                sub = payload.get("sub")
-                if sub:
-                    user_id = int(sub)
-            except Exception as e:
-                logger.debug("Token decode failed — treating as unauthenticated", exc_info=True)
-                pass  # Invalid token — treat as unauthenticated
+        user_id = extract_user_id_from_token(token)
 
         # Step 1: Create ticket with initial status
         ticket = Ticket(
             message=ticket_data.message,
-            status="open",
+            status=TicketStatus.OPEN.value,
             user_id=user_id
         )
         
@@ -216,16 +109,16 @@ def create_ticket(
         
         # Step 2: Run AI pipeline
         try:
-            ticket = _run_ticket_automation(ticket=ticket, db=db)
+            ticket = run_ticket_automation(ticket=ticket, db=db)
             
         except Exception as ai_error:
             # AI failure: escalate for safety (never block user)
-            logger.exception(f"AI pipeline failed for ticket {ticket.id}: {ai_error}")
+            logger.exception(f"AI pipeline failed for ticket {ticket.id}")
             
             # Rollback any partial AI processing, then escalate
             db.rollback()
             
-            ticket.status = "escalated"
+            ticket.status = TicketStatus.ESCALATED.value
             ticket.intent = None
             ticket.confidence = None
             ticket.sub_intent = None 
@@ -250,13 +143,15 @@ def create_ticket(
 
 @router.get("/", response_model=TicketList)
 def list_tickets(
-    ticket_status: Optional[str] = Query(
+    ticket_status: str | None = Query(
         None,
-        description="Filter tickets by status (open, auto_resolved, escalated, closed)",
+        description=f"Filter tickets by status ({TicketStatus.OPEN.value}, {TicketStatus.AUTO_RESOLVED.value}, {TicketStatus.ESCALATED.value}, {TicketStatus.CLOSED.value})",
         alias="status"
     ),
-    db: Session = Depends(get_db),
-    token: Optional[str] = Depends(oauth2_scheme_optional),
+    limit: int = Query(50, ge=1, le=100),
+    offset: int = Query(0, ge=0),
+    db: Annotated[Session, Depends(get_db)] = Depends(get_db),
+    token: Annotated[str | None, Depends(oauth2_scheme_optional)] = Depends(oauth2_scheme_optional),
 ) -> TicketList:
     """
     List all tickets with optional status filtering.
@@ -273,18 +168,7 @@ def list_tickets(
     """
     try:
         # Extract user_id and role from optional token
-        user_id = None
-        user_role = None
-        if token:
-            try:
-                payload = decode_token(token)
-                sub = payload.get("sub")
-                if sub:
-                    user_id = int(sub)
-                    user_role = payload.get("role")
-            except Exception as e:
-                logger.debug("Failed to decode token, showing all tickets", exc_info=True)
-                pass  # Invalid token — show all tickets
+        user_id, user_role = extract_user_id_and_role_from_token(token)
 
         # Build query
         query = db.query(Ticket)
@@ -294,16 +178,19 @@ def list_tickets(
             query = query.filter(Ticket.status == ticket_status)
         
         # Apply user filter for non-admin/agent users
-        if user_id and user_role not in ["admin", "agent"]:
+        if user_id and user_role not in [UserRole.ADMIN.value, UserRole.AGENT.value]:
             query = query.filter(Ticket.user_id == user_id)
         
-        # Execute query (order by creation date, newest first)
-        tickets = query.order_by(Ticket.created_at.desc()).all()
+        # Get total before pagination
+        total = query.count()
+
+        # Execute query with pagination (order by creation date, newest first)
+        tickets = query.order_by(Ticket.created_at.desc()).limit(limit).offset(offset).all()
         
         # Convert to response schemas
         ticket_responses = [TicketResponse.model_validate(ticket) for ticket in tickets]
         
-        return TicketList(tickets=ticket_responses)
+        return TicketList(tickets=ticket_responses, total=total)
         
     except HTTPException:
         # Re-raise HTTP exceptions (including 401 from token validation)
@@ -339,7 +226,7 @@ def tickets_health():
 @router.get("/{ticket_id}", response_model=TicketResponse)
 def get_ticket(
     ticket_id: int,
-    db: Session = Depends(get_db),
+    db: Annotated[Session, Depends(get_db)] = Depends(get_db),
 ) -> TicketResponse:
     """
     Retrieve a single ticket by ID.
@@ -380,8 +267,8 @@ def get_ticket(
 @router.post("/{ticket_id}/assign", response_model=TicketResponse)
 def assign_ticket(
     ticket_id: int,
-    db: Session = Depends(get_db),
-    current_user: User = Depends(require_agent_or_admin)
+    db: Annotated[Session, Depends(get_db)] = Depends(get_db),
+    current_user: Annotated[User, Depends(require_agent_or_admin)] = Depends(require_agent_or_admin)
 ) -> TicketResponse:
     """
     Assign an escalated ticket to the current agent/admin.
@@ -408,7 +295,7 @@ def assign_ticket(
             .where(
                 Ticket.id == ticket_id,
                 Ticket.assigned_agent_id.is_(None),
-                Ticket.status == "escalated",
+                Ticket.status == TicketStatus.ESCALATED.value,
             )
             .values(assigned_agent_id=current_user.id)
         )
@@ -429,7 +316,7 @@ def assign_ticket(
             # the first succeeded (rowcount=1, now committed by peer), the second
             # lands here (rowcount=0) and finds the ticket already theirs.
             # Return 200 idempotently — nothing to commit.
-            if ticket.assigned_agent_id == current_user.id and ticket.status == "escalated":
+            if ticket.assigned_agent_id == current_user.id and ticket.status == TicketStatus.ESCALATED.value:
                 logger.info(f"Ticket {ticket_id} already assigned to user {current_user.id} (self-race)")
                 return TicketResponse.model_validate(ticket)
 
@@ -438,7 +325,7 @@ def assign_ticket(
                     status_code=status.HTTP_409_CONFLICT,
                     detail=f"Ticket already assigned to agent {ticket.assigned_agent_id}",
                 )
-            if ticket.status != "escalated":
+            if ticket.status != TicketStatus.ESCALATED.value:
                 raise HTTPException(
                     status_code=status.HTTP_409_CONFLICT,
                     detail=f"Ticket status changed to '{ticket.status}', cannot assign",
@@ -475,8 +362,8 @@ def assign_ticket(
 @router.post("/{ticket_id}/close", response_model=TicketResponse)
 def close_ticket(
     ticket_id: int,
-    db: Session = Depends(get_db),
-    current_user: User = Depends(require_agent_or_admin)
+    db: Annotated[Session, Depends(get_db)] = Depends(get_db),
+    current_user: Annotated[User, Depends(require_agent_or_admin)] = Depends(require_agent_or_admin)
 ) -> TicketResponse:
     """
     Close an escalated or auto_resolved ticket.
@@ -505,9 +392,9 @@ def close_ticket(
             update(Ticket)
             .where(
                 Ticket.id == ticket_id,
-                Ticket.status.in_(["escalated", "auto_resolved"]),
+                Ticket.status.in_([TicketStatus.ESCALATED.value, TicketStatus.AUTO_RESOLVED.value]),
             )
-            .values(status="closed")
+            .values(status=TicketStatus.CLOSED.value)
         )
 
         if result.rowcount == 0:
@@ -559,7 +446,7 @@ def close_ticket(
 def create_ticket_feedback(
     ticket_id: int,
     feedback_data: FeedbackCreateNested,
-    db: Session = Depends(get_db),
+    db: Annotated[Session, Depends(get_db)] = Depends(get_db),
 ) -> FeedbackResponse:
     """
     Create feedback for a resolved ticket.
@@ -580,49 +467,12 @@ def create_ticket_feedback(
         HTTPException: If ticket not found, not resolved, or feedback already exists
     """
     try:
-        # Validate that ticket exists
-        ticket = db.query(Ticket).filter(Ticket.id == ticket_id).first()
-        if not ticket:
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail=f"Ticket with ID {ticket_id} not found"
-            )
-        
-        # Check if ticket is in resolved state
-        if ticket.status not in ["auto_resolved", "closed"]:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail=f"Ticket {ticket_id} is not resolved (current status: {ticket.status})"
-            )
-        
-        # Check for existing feedback to prevent duplicates
-        existing_feedback = db.query(Feedback).filter(Feedback.ticket_id == ticket_id).first()
-        if existing_feedback:
-            raise HTTPException(
-                status_code=status.HTTP_409_CONFLICT,
-                detail=f"Feedback already exists for ticket {ticket_id}"
-            )
-        
-        # Create feedback record
-        feedback = Feedback(
+        feedback = create_feedback_record(
+            db=db,
             ticket_id=ticket_id,
             rating=feedback_data.rating,
             resolved=feedback_data.resolved
         )
-        
-        # Save to database
-        db.add(feedback)
-        db.commit()
-        db.refresh(feedback)
-        
-        # Compute quality score for the ticket
-        base_score = feedback_data.rating / 5.0
-        resolution_boost = 0.1 if feedback_data.resolved else -0.1
-        ticket.quality_score = max(0.0, min(1.0, base_score + resolution_boost))
-        db.commit()
-        
-        logger.info(f"Feedback created for ticket {ticket_id}: rating={feedback_data.rating}, resolved={feedback_data.resolved}")
-        
         return FeedbackResponse.model_validate(feedback)
         
     except HTTPException:
@@ -635,6 +485,7 @@ def create_ticket_feedback(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Internal server error occurred while creating feedback"
         ) from e
+
 
 
 

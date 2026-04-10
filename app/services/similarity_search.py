@@ -1,36 +1,81 @@
+import json
 import math
-import re
-from collections import Counter
-from typing import Dict, List, Optional
 
+from app.utils.text_processing import tokenize, compute_idf, tf_idf_vector
 from app.core.config import settings
 from app.models.ticket import Ticket
 from app.utils.service_helpers import CacheHelper, ErrorHelper, MetricsHelper
+from app.constants import TicketStatus
 from sqlalchemy.orm import Session
 
-# Redis client singleton for lazy load
-_redis_client = None
+
+class _SafeEncoder(json.JSONEncoder):
+    """JSON encoder that serialises datetime objects to ISO strings."""
+
+    def default(self, obj):
+        if hasattr(obj, "isoformat"):
+            return obj.isoformat()
+        return super().default(obj)
+
+
+# Alias used internally
+SafeEncoder = _SafeEncoder
+
+
+class _RedisClientManager:
+    """Lazy-initializing, encapsulated Redis client holder.
+
+    Avoids module-level mutable state and ``global`` statements.
+    Call :meth:`get` to retrieve (or create) the client.
+    Call :meth:`reset` to clear a failed connection so the next
+    call to :meth:`get` will attempt a fresh connection.
+    """
+
+    def __init__(self) -> None:
+        self._client = None
+
+    def get(self):
+        """Return a Redis client if REDIS_URL is configured, else None."""
+        if self._client is not None:
+            return self._client
+
+        if not settings.REDIS_URL:
+            return None
+
+        try:
+            import redis
+            self._client = redis.from_url(
+                settings.REDIS_URL, decode_responses=True, socket_timeout=1
+            )
+            return self._client
+        except Exception as e:
+            ErrorHelper.log_only(e, "Failed to create Redis client")
+            # Do not cache the failure — allow retry on next call
+            return None
+
+    def reset(self) -> None:
+        """Disconnect the connection pool and clear the cached client.
+
+        Calls ``close()`` on the synchronous client (which disconnects all
+        pooled sockets) before dropping the reference so file descriptors
+        are released promptly.  Any error from ``close()`` is suppressed —
+        the reference is always cleared via ``finally``.
+        """
+        if self._client is not None:
+            try:
+                self._client.close()
+            except Exception:
+                pass  # Already broken — nothing useful we can do
+            finally:
+                self._client = None
+
+
+_redis_manager = _RedisClientManager()
 
 
 def _get_cache_client():
     """Return a Redis client if REDIS_URL is configured, else None."""
-    global _redis_client
-    if _redis_client is not None:
-        return _redis_client
-
-    if not settings.REDIS_URL:
-        return None
-        
-    try:
-        import redis
-        _redis_client = redis.from_url(
-            settings.REDIS_URL, decode_responses=True, socket_timeout=1
-        )
-        return _redis_client
-    except Exception as e:
-        ErrorHelper.log_and_raise(e, "Failed to create Redis client")
-        _redis_client = None  # Don't cache the failure
-        return None
+    return _redis_manager.get()
 
 
 def _cache_key(message: str) -> str:
@@ -38,112 +83,10 @@ def _cache_key(message: str) -> str:
     return CacheHelper.make_cache_key("srs:similarity", message)[:32]
 
 
-def _tokenize(text: str) -> List[str]:
-    """
-    Tokenize text into words.
-    
-    Args:
-        text: Input text to tokenize
-        
-    Returns:
-        List of lowercase tokens
-    """
-    if not text or not isinstance(text, str):
-        return []
-    
-    # Use validation helper to sanitize input
-    from app.utils.service_helpers import ValidationHelper
-    text = ValidationHelper.sanitize_string(text)
-    text = text.lower()
-    tokens = re.findall(r'\b\w+\b', text)
-    return tokens
 
 
-def _compute_idf(all_texts: List[str]) -> Dict[str, float]:
-    """
-    Precompute IDF scores for all texts in corpus.
-    
-    Args:
-        all_texts: All texts in corpus
-        
-    Returns:
-        Dictionary of word -> IDF score
-    """
-    total_docs = len(all_texts)
-    doc_counts = Counter()
-    
-    # Count documents containing each word
-    for doc_text in all_texts:
-        doc_tokens = set(_tokenize(doc_text))
-        for token in doc_tokens:
-            doc_counts[token] += 1
-    
-    # Calculate IDF for each word
-    idf_scores = {}
-    for word in doc_counts:
-        idf = math.log((total_docs + 1) / (doc_counts[word] + 1)) + 1
-        idf_scores[word] = idf
-    
-    return idf_scores
 
-
-def _calculate_tf(text: str) -> Dict[str, float]:
-    """
-    Calculate term frequency (TF) for a text.
-    
-    Args:
-        text: The text to calculate TF for
-        
-    Returns:
-        Dictionary of word -> TF score
-    """
-    tokens = _tokenize(text)
-    if not tokens:
-        return {}
-    
-    tf = Counter(tokens)
-    total_tokens = len(tokens)
-    tf_scores = {word: count / total_tokens for word, count in tf.items()}
-    
-    return tf_scores
-
-
-def _apply_idf(tf_scores: Dict[str, float], idf_scores: Dict[str, float]) -> Dict[str, float]:
-    """
-    Apply IDF scores to TF scores to get TF-IDF.
-    
-    Args:
-        tf_scores: Term frequency scores
-        idf_scores: Precomputed IDF scores
-        
-    Returns:
-        Dictionary of word -> TF-IDF score
-    """
-    tfidf_scores = {}
-    for word, tf_score in tf_scores.items():
-        tfidf_scores[word] = tf_score * idf_scores.get(word, 1)
-    
-    return tfidf_scores
-
-
-def _calculate_tf_idf(text: str, all_texts: List[str]) -> Dict[str, float]:
-    """
-    Calculate TF-IDF scores for a text against a corpus.
-    
-    Args:
-        text: The text to calculate TF-IDF for
-        all_texts: All texts in the corpus (for backward compatibility)
-        
-    Returns:
-        Dictionary of word -> TF-IDF score
-    """
-    # For backward compatibility, compute IDF on the fly
-    idf_scores = _compute_idf(all_texts)
-    tf_scores = _calculate_tf(text)
-    return _apply_idf(tf_scores, idf_scores)
-
-
-def _cosine_similarity(tfidf1: Dict[str, float], tfidf2: Dict[str, float]) -> float:
+def _cosine_similarity(tfidf1: dict[str, float], tfidf2: dict[str, float]) -> float:
     """
     Calculate cosine similarity between two TF-IDF vectors.
     
@@ -174,12 +117,12 @@ def _cosine_similarity(tfidf1: Dict[str, float], tfidf2: Dict[str, float]) -> fl
     return dot_product / (magnitude1 * magnitude2)
 
 
-def get_resolved_tickets(db: Session) -> List[Ticket]:
+def get_resolved_tickets(db: Session) -> list[Ticket]:
     """Fetch recent successfully resolved tickets for similarity search."""
     return (
         db.query(Ticket)
         .filter(
-            Ticket.status == "auto_resolved",
+            Ticket.status == TicketStatus.AUTO_RESOLVED.value,
             Ticket.response.isnot(None),
         )
         .order_by(Ticket.created_at.desc())
@@ -188,7 +131,7 @@ def get_resolved_tickets(db: Session) -> List[Ticket]:
     )
 
 
-def find_similar_ticket(new_message: str, resolved_tickets: List[Dict], similarity_threshold: float = None) -> Optional[Dict]:
+def find_similar_ticket(new_message: str, resolved_tickets: list[dict], similarity_threshold: float = None) -> dict | None:
     """
     Find the most similar resolved ticket to a new ticket message.
     
@@ -204,10 +147,9 @@ def find_similar_ticket(new_message: str, resolved_tickets: List[Dict], similari
     Returns:
         Dict with {"matched_text": str, "similarity_score": float} or None if no match above threshold
     """
-    global _redis_client
     if not new_message or not isinstance(new_message, str):
         return None
-    
+
     if not resolved_tickets or not isinstance(resolved_tickets, list):
         return None
 
@@ -232,10 +174,10 @@ def find_similar_ticket(new_message: str, resolved_tickets: List[Dict], similari
                 # Apply current threshold to cached raw result
                 if cached_data and cached_data.get("similarity_score", 0.0) >= similarity_threshold:
                     return cached_data
-                return None # Message is in cache but doesn't meet this threshold
+                return None  # Message is in cache but doesn't meet this threshold
         except Exception:
-            _redis_client = None
-            pass
+            _redis_manager.reset()
+            cache = None
 
     # Extract messages from resolved tickets
     ticket_messages = []
@@ -249,11 +191,10 @@ def find_similar_ticket(new_message: str, resolved_tickets: List[Dict], similari
         return None
 
     # Precompute IDF scores once for efficiency
-    idf_scores = _compute_idf([new_message] + ticket_messages)
+    idf_scores = compute_idf([new_message, *ticket_messages])
 
     # Calculate TF-IDF for new message
-    new_tf = _calculate_tf(new_message)
-    new_tfidf = _apply_idf(new_tf, idf_scores)
+    new_tfidf = tf_idf_vector(new_message, idf_scores)
 
     # Find best match
     best_match = None
@@ -269,8 +210,7 @@ def find_similar_ticket(new_message: str, resolved_tickets: List[Dict], similari
             continue
 
         # Calculate TF-IDF for this ticket
-        ticket_tf = _calculate_tf(ticket_message)
-        ticket_tfidf = _apply_idf(ticket_tf, idf_scores)
+        ticket_tfidf = tf_idf_vector(ticket_message, idf_scores)
 
         # Calculate cosine similarity
         similarity = _cosine_similarity(new_tfidf, ticket_tfidf)
@@ -296,11 +236,12 @@ def find_similar_ticket(new_message: str, resolved_tickets: List[Dict], similari
             # We always cache the best found match so future calls with lower thresholds can use it
             cache.setex(key, 300, json.dumps(raw_result, cls=SafeEncoder))
         except Exception:
-            _redis_client = None
-            pass
+            _redis_manager.reset()
+            cache = None
 
     # Check if raw result meets the requested threshold for THIS call
     if raw_result and raw_result["similarity_score"] >= similarity_threshold:
         return raw_result
     
     return None
+

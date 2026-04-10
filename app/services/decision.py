@@ -1,17 +1,25 @@
 """
-app/services/decision.py
+app/services/decision.py  [DEPRECATED]
 
-Purpose:
---------
-Decision engine — determines whether a ticket should be auto-resolved or escalated.
+Deprecated:
+This module is a Phase 3 spec alias. Import directly from the canonical module instead:
 
-Note:
------
-Canonical implementation lives in decision_engine.py.
-This module re-exports it to match the name defined in the Phase 3 spec.
+    from app.services.decision_engine import decide_resolution, get_confidence_threshold, set_confidence_threshold
+
+This file will be removed in a future release.
 """
 
-# Canonical implementation — delegates to decision_engine.py
-from app.services.decision_engine import decide_resolution, get_confidence_threshold, set_confidence_threshold
+import warnings
+
+warnings.warn(
+    "Importing from 'app.services.decision' is deprecated. "
+    "Use 'app.services.decision_engine' instead. "
+    "This alias will be removed in a future release.",
+    DeprecationWarning,
+    stacklevel=2,
+)
+
+from app.services.decision_engine import decide_resolution, get_confidence_threshold, set_confidence_threshold  # noqa: E402, F401
 
 __all__ = ["decide_resolution", "get_confidence_threshold", "set_confidence_threshold"]
+

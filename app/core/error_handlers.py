@@ -2,30 +2,23 @@
 app/core/error_handlers.py
 
 Purpose:
---------
 Implement FastAPI exception handlers for consistent error responses.
 
-Owner:
-------
-Backend Team
-
 Responsibilities:
------------------
 - Register FastAPI exception handlers
 - Log errors server-side without exposing details
 - Return appropriate HTTP status codes
 - Handle AI/service failures with fallback responses
 
 DO NOT:
--------
 - Expose stack traces to clients
 - Include sensitive internal information
 - Return raw exception messages to clients
 """
 
 import logging
-import traceback
-from typing import Dict, Any, Optional
+
+from typing import Any
 from fastapi import Request, HTTPException
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
@@ -48,7 +41,7 @@ from app.core.exceptions import (
 logger = logging.getLogger(__name__)
 
 
-def _sanitize_error_details(error_details: Optional[Dict[str, Any]]) -> str:
+def _sanitize_error_details(error_details: dict[str, Any] | None) -> str:
     """
     Sanitize error details for safe logging.
     
@@ -188,9 +181,8 @@ async def general_exception_handler(request: Request, exc: Exception) -> JSONRes
         JSONResponse with generic error message
     """
     # Log the full exception for debugging
-    logger.error(
-        f"Unhandled exception in {request.method} {request.url.path}: {type(exc).__name__}: {exc!s}\n"
-        f"Traceback: {traceback.format_exc()}"
+    logger.exception(
+        f"Unhandled exception in {request.method} {request.url.path}: {type(exc).__name__}: {exc!s}"
     )
     
     # Return generic internal error to client
@@ -264,9 +256,9 @@ def setup_exception_handlers(app) -> None:
 
 def handle_ai_service_failure(
     operation: str,
-    fallback_data: Dict[str, Any],
-    error_details: Optional[Dict[str, Any]] = None
-) -> Dict[str, Any]:
+    fallback_data: dict[str, Any],
+    error_details: dict[str, Any] | None = None
+) -> dict[str, Any]:
     """
     Handle AI service failures with fallback response.
     
@@ -292,3 +284,4 @@ def handle_ai_service_failure(
             "message": "AI service temporarily unavailable, using fallback response"
         }
     }
+

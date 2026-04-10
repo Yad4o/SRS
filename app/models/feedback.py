@@ -2,21 +2,14 @@
 app/models/feedback.py
 
 Purpose:
---------
 Defines the Feedback database model.
 
-Owner:
-------
-Om (Backend / Data Modeling)
-
 Responsibilities:
------------------
 - Store user feedback for ticket resolutions
 - Track whether auto-resolution was successful
 - Enable future AI improvement
 
 DO NOT:
--------
 - Analyze feedback here
 - Adjust AI models here
 - Implement business logic here
@@ -106,3 +99,4 @@ class Feedback(Base):
     # TODO (Future Enhancements)
     # -------------------------------------------------
     # - sentiment score
+

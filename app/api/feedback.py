@@ -2,22 +2,15 @@
 app/api/feedback.py
 
 Purpose:
---------
 Defines API endpoints for collecting user feedback.
 
-Owner:
-------
-Om (Backend / API Layer)
-
 Responsibilities:
------------------
 - Accept feedback for resolved tickets
 - Store feedback in database
 - Retrieve feedback for tickets
 - Keep feedback collection simple and reliable
 
 DO NOT:
--------
 - Analyze feedback here
 - Modify AI logic here
 - Change ticket resolution status here
@@ -26,12 +19,14 @@ DO NOT:
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.orm import Session
 from sqlalchemy.exc import IntegrityError
+from typing import Annotated
 import logging
 
 from app.schemas.feedback import FeedbackCreate, FeedbackResponse
 from app.db.session import get_db
 from app.models.feedback import Feedback
 from app.models.ticket import Ticket
+from app.services.feedback_service import create_feedback_record
 
 # Configure logging
 logger = logging.getLogger(__name__)
@@ -42,10 +37,11 @@ router = APIRouter(
 )
 
 
+
 @router.post("/", status_code=status.HTTP_201_CREATED, response_model=FeedbackResponse)
 def create_feedback(
     feedback_data: FeedbackCreate,
-    db: Session = Depends(get_db),
+    db: Annotated[Session, Depends(get_db)] = Depends(get_db),
 ):
     """
     Create feedback for a resolved ticket.
@@ -68,49 +64,12 @@ def create_feedback(
         HTTPException: If ticket not found or database operation fails
     """
     try:
-        # Validate that ticket exists
-        ticket = db.query(Ticket).filter(Ticket.id == feedback_data.ticket_id).first()
-        if not ticket:
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail=f"Ticket with ID {feedback_data.ticket_id} not found"
-            )
-        
-        # Check if ticket is in resolved state
-        if ticket.status not in ["auto_resolved", "closed"]:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail=f"Ticket {feedback_data.ticket_id} is not resolved (current status: {ticket.status})"
-            )
-        
-        # Check for existing feedback to prevent duplicates
-        existing_feedback = db.query(Feedback).filter(Feedback.ticket_id == feedback_data.ticket_id).first()
-        if existing_feedback:
-            raise HTTPException(
-                status_code=status.HTTP_409_CONFLICT,
-                detail=f"Feedback already exists for ticket {feedback_data.ticket_id}"
-            )
-        
-        # Create feedback record
-        feedback = Feedback(
+        feedback = create_feedback_record(
+            db=db,
             ticket_id=feedback_data.ticket_id,
             rating=feedback_data.rating,
             resolved=feedback_data.resolved
         )
-        
-        # Save to database
-        db.add(feedback)
-        db.commit()
-        db.refresh(feedback)
-        
-        # Compute quality score for the ticket
-        base_score = feedback_data.rating / 5.0
-        resolution_boost = 0.1 if feedback_data.resolved else -0.1
-        ticket.quality_score = max(0.0, min(1.0, base_score + resolution_boost))
-        db.commit()
-        
-        logger.info(f"Feedback created for ticket {feedback_data.ticket_id}: rating={feedback_data.rating}, resolved={feedback_data.resolved}")
-        
         return FeedbackResponse.model_validate(feedback)
         
     except HTTPException:
@@ -118,7 +77,10 @@ def create_feedback(
         raise
     except IntegrityError as e:
         db.rollback()
+        # This IntegrityError handler is effectively a defensive backup for a concurrent-insert race 
+        # condition because create_feedback_record already pre-checks for existing feedback
         if "UNIQUE constraint failed" in str(e) or "duplicate key" in str(e).lower():
+            logger.exception("Concurrent insert race detected")
             raise HTTPException(
                 status_code=status.HTTP_409_CONFLICT,
                 detail=f"Feedback already exists for ticket {feedback_data.ticket_id}"
@@ -141,7 +103,7 @@ def create_feedback(
 @router.get("/{ticket_id}", response_model=FeedbackResponse)
 def get_feedback_by_ticket_id(
     ticket_id: int,
-    db: Session = Depends(get_db),
+    db: Annotated[Session, Depends(get_db)] = Depends(get_db),
 ):
     """
     Retrieve feedback for a specific ticket by ticket ID.
@@ -182,7 +144,7 @@ def get_feedback_by_ticket_id(
 @router.get("/", response_model=FeedbackResponse)
 def get_feedback_by_query(
     ticket_id: int = Query(..., description="ID of the ticket to get feedback for"),
-    db: Session = Depends(get_db),
+    db: Annotated[Session, Depends(get_db)] = Depends(get_db),
 ):
     """
     Retrieve feedback for a ticket using query parameter.
@@ -201,3 +163,4 @@ def get_feedback_by_query(
     """
     # Delegate to the path-parameter endpoint to keep behavior and error handling consistent
     return get_feedback_by_ticket_id(ticket_id=ticket_id, db=db)
+

@@ -2,25 +2,25 @@
 app/utils/service_helpers.py
 
 Purpose:
---------
 Common utility functions for service layer operations.
-
-Owner:
-------
 Service Utilities
 
 Responsibilities:
------------------
 - Common database operations
 - Error handling helpers
 - Validation utilities
 - Response formatting
 """
 
-from typing import Dict, Any, Optional, List
-from sqlalchemy.orm import Session
-from datetime import datetime
+import hashlib
+import json
 import logging
+import re
+from datetime import datetime, date
+from decimal import Decimal
+from typing import Any
+
+from sqlalchemy.orm import Session
 
 logger = logging.getLogger(__name__)
 
@@ -35,7 +35,7 @@ class DatabaseOps:
             db.commit()
             return True
         except Exception as e:
-            logger.error(f"Database commit failed: {e}")
+            logger.exception("Database commit failed")
             db.rollback()
             return False
     
@@ -49,7 +49,7 @@ class DatabaseOps:
             db.refresh(instance)
             return instance
         except Exception as e:
-            logger.error(f"Failed to create {model.__name__}: {e}")
+            logger.exception(f"Failed to create {model.__name__}")
             db.rollback()
             raise
     
@@ -59,7 +59,7 @@ class DatabaseOps:
         try:
             return db.query(model).filter(model.id == id).first()
         except Exception as e:
-            logger.error(f"Failed to get {model.__name__} with id {id}: {e}")
+            logger.exception(f"Failed to get {model.__name__} with id {id}")
             return None
 
 
@@ -67,7 +67,7 @@ class ResponseFormatter:
     """Common response formatting utilities."""
     
     @staticmethod
-    def success_response(data: Any = None, message: str = "Operation successful") -> Dict[str, Any]:
+    def success_response(data: Any = None, message: str = "Operation successful") -> dict[str, Any]:
         """Format a successful response."""
         response = {"success": True, "message": message}
         if data is not None:
@@ -75,7 +75,7 @@ class ResponseFormatter:
         return response
     
     @staticmethod
-    def error_response(message: str, code: str = "ERROR", details: Any = None) -> Dict[str, Any]:
+    def error_response(message: str, code: str = "ERROR", details: Any = None) -> dict[str, Any]:
         """Format an error response."""
         response = {"success": False, "error": {"code": code, "message": message}}
         if details is not None:
@@ -83,7 +83,7 @@ class ResponseFormatter:
         return response
     
     @staticmethod
-    def paginated_response(items: List[Any], total: int, page: int = 1, limit: int = 50) -> Dict[str, Any]:
+    def paginated_response(items: list[Any], total: int, page: int = 1, limit: int = 50) -> dict[str, Any]:
         """Format a paginated response."""
         return {
             "items": items,
@@ -102,23 +102,20 @@ class ValidationHelper:
     @staticmethod
     def is_valid_email(email: str) -> bool:
         """Basic email validation."""
-        import re
         pattern = r'^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$'
         return bool(re.match(pattern, email))
     
     @staticmethod
-    def sanitize_string(text: str, max_length: Optional[int] = None) -> str:
+    def sanitize_string(text: str, max_length: int | None = None) -> str:
         """Sanitize string input."""
         if not isinstance(text, str):
             text = str(text)
-        
-        # Remove potential harmful characters
-        import re
+
         text = re.sub(r'[<>]', '', text)
-        
+
         if max_length and len(text) > max_length:
             text = text[:max_length]
-        
+
         return text.strip()
     
     @staticmethod
@@ -135,17 +132,12 @@ class CacheHelper:
     @staticmethod
     def make_cache_key(prefix: str, *args) -> str:
         """Generate a cache key from prefix and arguments."""
-        import hashlib
         key_string = f"{prefix}:{':'.join(str(arg) for arg in args)}"
         return hashlib.md5(key_string.encode()).hexdigest()
     
     @staticmethod
     def serialize_for_cache(data: Any) -> str:
         """Serialize data for caching."""
-        import json
-        from datetime import datetime, date
-        from decimal import Decimal
-        
         class CustomJSONEncoder(json.JSONEncoder):
             def default(self, obj):
                 if isinstance(obj, (datetime, date)):
@@ -153,13 +145,12 @@ class CacheHelper:
                 if isinstance(obj, Decimal):
                     return float(obj)
                 return super().default(obj)
-        
+
         return json.dumps(data, cls=CustomJSONEncoder)
     
     @staticmethod
     def deserialize_from_cache(data: str) -> Any:
         """Deserialize data from cache."""
-        import json
         return json.loads(data)
 
 
@@ -169,13 +160,18 @@ class ErrorHelper:
     @staticmethod
     def log_and_raise(error: Exception, message: str = "An error occurred"):
         """Log an error and raise it."""
-        logger.error(f"{message}: {error}")
+        logger.exception(message)
         raise error
+
+    @staticmethod
+    def log_only(error: Exception, message: str = "An error occurred"):
+        """Log an error without raising it."""
+        logger.exception(message)
     
     @staticmethod
-    def handle_database_error(error: Exception, operation: str) -> Dict[str, Any]:
+    def handle_database_error(error: Exception, operation: str) -> dict[str, Any]:
         """Handle database errors consistently."""
-        logger.error(f"Database error during {operation}: {error}")
+        logger.exception(f"Database error during {operation}")
         return ResponseFormatter.error_response(
             message="Database operation failed",
             code="DATABASE_ERROR",
@@ -183,7 +179,7 @@ class ErrorHelper:
         )
     
     @staticmethod
-    def handle_validation_error(errors: List[str]) -> Dict[str, Any]:
+    def handle_validation_error(errors: list[str]) -> dict[str, Any]:
         """Handle validation errors consistently."""
         return ResponseFormatter.error_response(
             message="Validation failed",
@@ -196,7 +192,7 @@ class MetricsHelper:
     """Common metrics and logging utilities."""
     
     @staticmethod
-    def log_operation(operation: str, user_id: Optional[str] = None, **kwargs):
+    def log_operation(operation: str, user_id: str | None = None, **kwargs):
         """Log an operation with optional user context."""
         log_data = {"operation": operation, "timestamp": datetime.utcnow().isoformat()}
         if user_id:
@@ -212,7 +208,19 @@ class MetricsHelper:
             logger.info(f"Additional metrics: {kwargs}")
 
 
+def compute_quality_score(rating: int, resolved: bool) -> float:
+    """
+    Compute a normalized quality score (0.0-1.0).
+    
+    Formula: base_score (rating/5) + resolution_boost (+0.1 if resolved, -0.1 if not)
+    """
+    base_score = rating / 5.0
+    resolution_boost = 0.1 if resolved else -0.1
+    return max(0.0, min(1.0, base_score + resolution_boost))
+
+
 # Convenience imports for backward compatibility
 safe_commit = DatabaseOps.safe_commit
 create_with_rollback = DatabaseOps.create_with_rollback
 get_or_none = DatabaseOps.get_or_none
+

@@ -2,42 +2,50 @@
 app/api/auth.py
 
 Purpose:
---------
 Authentication API endpoints for user login and registration.
 
-Owner:
-------
-Om (Backend / API Development)
-
 Responsibilities:
------------------
 - Handle user login with email and password
 - Generate JWT access tokens for authenticated users
 - Optional: Handle user registration with password hashing
 - Return appropriate HTTP status codes and error messages
 
 DO NOT:
--------
 - Store passwords in plain text
 - Implement business logic beyond authentication
 - Access database without proper error handling
 
 References:
------------
 - Technical Spec § 10.1 (Authentication)
 - Task 2.1 (Security Utilities)
 - Task 2.2 (User Schemas)
 """
 
 import logging
+import secrets
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.security import OAuth2PasswordBearer
 from sqlalchemy.orm import Session
 from sqlalchemy.exc import IntegrityError, SQLAlchemyError
-from datetime import timedelta, datetime
+from datetime import timedelta
 from typing import Annotated
 from jose import JWTError
+
+from app.constants import (
+    UserRole,
+    AUTH_SERVICE_UNAVAILABLE,
+    INCORRECT_CREDENTIALS,
+    EMAIL_ALREADY_REGISTERED,
+    EMAIL_PASSWORD_REQUIRED,
+    INVALID_DEFAULT_ROLE,
+    COULD_NOT_VALIDATE_CREDENTIALS,
+    EMAIL_NOT_FOUND,
+    INVALID_OTP,
+    OTP_EXPIRED,
+    MAX_OTP_ATTEMPTS,
+    EMAIL_SEND_FAILED
+)
 
 from app.core.security import verify_password, create_access_token, hash_password, decode_token, check_password_truncation
 from app.core.config import settings, ALLOWED_ROLES
@@ -58,19 +66,6 @@ router = APIRouter(prefix="/auth", tags=["Authentication"])
 
 # Configure logger
 logger = logging.getLogger(__name__)
-
-# Error message constants for better maintainability
-AUTH_SERVICE_UNAVAILABLE = "Authentication service temporarily unavailable"
-INCORRECT_CREDENTIALS = "Incorrect email or password"
-EMAIL_ALREADY_REGISTERED = "Email already registered"
-EMAIL_PASSWORD_REQUIRED = "Email and password are required"
-INVALID_DEFAULT_ROLE = "Invalid default role configuration"
-COULD_NOT_VALIDATE_CREDENTIALS = "Could not validate credentials"
-EMAIL_NOT_FOUND = "Email address not found"
-INVALID_OTP = "Invalid or expired OTP"
-OTP_EXPIRED = "OTP has expired"
-MAX_OTP_ATTEMPTS = "Maximum OTP attempts exceeded. Please request a new OTP"
-EMAIL_SEND_FAILED = "Failed to send OTP email. Please try again"
 
 
 def normalize_email(email: str) -> str:
@@ -122,11 +117,13 @@ def authenticate_user(db: Session, email: str, password: str) -> User | None:
         user = db.query(User).filter(User.email == normalized_email).first()
         if not user:
             return None
+        if not user.is_active:
+            return None
         if not verify_password(password, user.hashed_password):
             return None
         return user
     except SQLAlchemyError as e:
-        logger.error(f"Database error during authentication: {e}")
+        logger.exception("Database error during authentication")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=AUTH_SERVICE_UNAVAILABLE
@@ -163,7 +160,7 @@ def create_user(db: Session, user_create: UserCreate) -> UserResponse:
         hashed_password = hash_password(user_create.password)
         
         # Use role from user_create, fallback to default if not provided
-        user_role = getattr(user_create, 'role', None) or getattr(settings, 'DEFAULT_USER_ROLE', 'user')
+        user_role = getattr(user_create, 'role', None) or getattr(settings, 'DEFAULT_USER_ROLE', UserRole.USER.value)
         
         # Validate role against allowed roles
         if user_role not in ALLOWED_ROLES:
@@ -209,21 +206,21 @@ def create_user(db: Session, user_create: UserCreate) -> UserResponse:
                 detail=EMAIL_ALREADY_REGISTERED
             )
         else:
-            logger.error(f"Database integrity error creating user: {e}")
+            logger.exception("Database integrity error creating user")
             raise HTTPException(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
                 detail=AUTH_SERVICE_UNAVAILABLE
             )
     except SQLAlchemyError as e:
         db.rollback()
-        logger.error(f"Database error creating user: {e}")
+        logger.exception("Database error creating user")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=AUTH_SERVICE_UNAVAILABLE
         )
     except Exception as e:
         db.rollback()
-        logger.error(f"Unexpected error during user creation: {e}")
+        logger.exception("Unexpected error during user creation")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=AUTH_SERVICE_UNAVAILABLE
@@ -341,15 +338,13 @@ def get_current_user(
             raise credentials_exception
         return user
     except SQLAlchemyError as e:
-        logger.error(f"Database error retrieving user: {e}")
+        logger.exception("Database error retrieving user")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=AUTH_SERVICE_UNAVAILABLE
         )
 
 
-# require_agent_or_admin has been moved to app/api/dependencies.py
-# Import it from there to keep auth.py focused on token issuance/validation only.
 
 
 @router.get("/me", response_model=UserResponse)
@@ -428,7 +423,7 @@ def forgot_password(
         )
         
     except SQLAlchemyError as e:
-        logger.error(f"Database error in forgot_password: {e}")
+        logger.exception("Database error in forgot_password")
         db.rollback()
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
@@ -437,12 +432,67 @@ def forgot_password(
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"Unexpected error in forgot_password: {e}")
+        logger.exception("Unexpected error in forgot_password")
         db.rollback()
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=AUTH_SERVICE_UNAVAILABLE
         )
+
+
+def _verify_user_otp(db: Session, email: str, otp: str) -> User:
+    """Helper method to encapsulate OTP verification logic."""
+    # Normalize email
+    normalized_email = normalize_email(email)
+    
+    # Find user by email
+    user = db.query(User).filter(User.email == normalized_email).first()
+    if not user:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=EMAIL_NOT_FOUND
+        )
+    
+    # Check if user has OTP
+    if not user.reset_otp or not user.reset_otp_expires_at:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=INVALID_OTP
+        )
+    
+    # Check if OTP is expired
+    if is_otp_expired(user.reset_otp_expires_at):
+        # Clear expired OTP
+        user.reset_otp = None
+        user.reset_otp_expires_at = None
+        user.reset_otp_attempts = 0
+        db.commit()
+        
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=OTP_EXPIRED
+        )
+    
+    # Check max attempts (3 attempts allowed)
+    if user.reset_otp_attempts >= 3:
+        raise HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            detail=MAX_OTP_ATTEMPTS
+        )
+    
+    # Verify OTP
+    if not secrets.compare_digest(str(user.reset_otp), str(otp)):
+        # Increment attempts
+        user.reset_otp_attempts += 1
+        db.commit()
+        
+        remaining_attempts = 3 - user.reset_otp_attempts
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Invalid OTP. {remaining_attempts} attempts remaining"
+        )
+        
+    return user
 
 
 @router.post("/verify-otp", response_model=VerifyOTPResponse)
@@ -464,55 +514,7 @@ def verify_otp(
         HTTPException: If OTP is invalid/expired (400) or max attempts exceeded (429)
     """
     try:
-        # Normalize email
-        normalized_email = normalize_email(request.email)
-        
-        # Find user by email
-        user = db.query(User).filter(User.email == normalized_email).first()
-        if not user:
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail=EMAIL_NOT_FOUND
-            )
-        
-        # Check if user has OTP
-        if not user.reset_otp or not user.reset_otp_expires_at:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail=INVALID_OTP
-            )
-        
-        # Check if OTP is expired
-        if is_otp_expired(user.reset_otp_expires_at):
-            # Clear expired OTP
-            user.reset_otp = None
-            user.reset_otp_expires_at = None
-            user.reset_otp_attempts = 0
-            db.commit()
-            
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail=OTP_EXPIRED
-            )
-        
-        # Check max attempts (3 attempts allowed)
-        if user.reset_otp_attempts >= 3:
-            raise HTTPException(
-                status_code=status.HTTP_429_TOO_MANY_REQUESTS,
-                detail=MAX_OTP_ATTEMPTS
-            )
-        
-        # Verify OTP
-        if user.reset_otp != request.otp:
-            # Increment attempts
-            user.reset_otp_attempts += 1
-            db.commit()
-            
-            remaining_attempts = 3 - user.reset_otp_attempts
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail=f"Invalid OTP. {remaining_attempts} attempts remaining"
-            )
+        user = _verify_user_otp(db, request.email, request.otp)
         
         # OTP is valid - reset attempts
         user.reset_otp_attempts = 0
@@ -524,7 +526,7 @@ def verify_otp(
         )
         
     except SQLAlchemyError as e:
-        logger.error(f"Database error in verify_otp: {e}")
+        logger.exception("Database error in verify_otp")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=AUTH_SERVICE_UNAVAILABLE
@@ -532,7 +534,7 @@ def verify_otp(
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"Unexpected error in verify_otp: {e}")
+        logger.exception("Unexpected error in verify_otp")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=AUTH_SERVICE_UNAVAILABLE
@@ -558,55 +560,7 @@ def reset_password(
         HTTPException: If OTP is invalid/expired (400) or max attempts exceeded (429)
     """
     try:
-        # Normalize email
-        normalized_email = normalize_email(request.email)
-        
-        # Find user by email
-        user = db.query(User).filter(User.email == normalized_email).first()
-        if not user:
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail=EMAIL_NOT_FOUND
-            )
-        
-        # Check if user has OTP
-        if not user.reset_otp or not user.reset_otp_expires_at:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail=INVALID_OTP
-            )
-        
-        # Check if OTP is expired
-        if is_otp_expired(user.reset_otp_expires_at):
-            # Clear expired OTP
-            user.reset_otp = None
-            user.reset_otp_expires_at = None
-            user.reset_otp_attempts = 0
-            db.commit()
-            
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail=OTP_EXPIRED
-            )
-        
-        # Check max attempts
-        if user.reset_otp_attempts >= 3:
-            raise HTTPException(
-                status_code=status.HTTP_429_TOO_MANY_REQUESTS,
-                detail=MAX_OTP_ATTEMPTS
-            )
-        
-        # Verify OTP
-        if user.reset_otp != request.otp:
-            # Increment attempts
-            user.reset_otp_attempts += 1
-            db.commit()
-            
-            remaining_attempts = 3 - user.reset_otp_attempts
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail=f"Invalid OTP. {remaining_attempts} attempts remaining"
-            )
+        user = _verify_user_otp(db, request.email, request.otp)
         
         # Check password truncation
         truncation_info = check_password_truncation(request.new_password)
@@ -629,7 +583,7 @@ def reset_password(
         )
         
     except SQLAlchemyError as e:
-        logger.error(f"Database error in reset_password: {e}")
+        logger.exception("Database error in reset_password")
         db.rollback()
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
@@ -638,9 +592,10 @@ def reset_password(
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"Unexpected error in reset_password: {e}")
+        logger.exception("Unexpected error in reset_password")
         db.rollback()
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=AUTH_SERVICE_UNAVAILABLE
         )
+
