@@ -24,7 +24,7 @@ References:
 import logging
 import secrets
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Request, status
 from fastapi.security import OAuth2PasswordBearer
 from sqlalchemy.orm import Session
 from sqlalchemy.exc import IntegrityError, SQLAlchemyError
@@ -50,6 +50,7 @@ from app.constants import (
 
 from app.core.security import verify_password, create_access_token, hash_password, decode_token, check_password_truncation
 from app.core.config import settings, ALLOWED_ROLES
+from app.core.limiter import limiter
 from app.core.otp import generate_otp, send_otp_email, log_otp_for_dev, is_otp_expired, get_otp_expiration_time
 from app.db.session import get_db
 from app.models.user import User
@@ -229,7 +230,9 @@ def create_user(db: Session, user_create: UserCreate) -> UserResponse:
 
 
 @router.post("/login", response_model=Token)
+@limiter.limit(settings.AUTH_RATE_LIMIT_LOGIN)
 def login(
+    request: Request,
     user_credentials: UserLogin,
     db: Annotated[Session, Depends(get_db)]
 ):
@@ -372,22 +375,29 @@ def get_current_user_info(
 
 
 @router.post("/forgot-password", response_model=ForgotPasswordResponse)
+@limiter.limit(settings.AUTH_RATE_LIMIT_FORGOT_PASSWORD)
 def forgot_password(
-    request: ForgotPasswordRequest,
+    request: Request,
+    request_body: ForgotPasswordRequest,
     db: Annotated[Session, Depends(get_db)]
 ):
     """
-    Send OTP to user's email for password reset.
-    
+    Initiate password reset by sending an OTP to the supplied email.
+
+    SECURITY NOTE: This endpoint always returns HTTP 200 with an identical
+    body regardless of whether the email is registered — see the handler
+    body for the rationale (user enumeration / CWE-204 prevention).
+
     Args:
-        request: ForgotPasswordRequest with user email
+        request: FastAPI Request (required by SlowAPI rate-limiter)
+        request_body: ForgotPasswordRequest with user email
         db: Database session dependency
-        
+
     Returns:
-        ForgotPasswordResponse with success message and OTP expiration time
-        
+        ForgotPasswordResponse with a safe, non-leaking success message
+
     Raises:
-        HTTPException: If email not found (404) or email send fails (500)
+        HTTPException 500 – database or unexpected internal error
     """
     # SECURITY: The response MUST be identical whether or not the email
     # exists.  Diverging on 404 vs 200 leaks registered addresses (user
@@ -399,7 +409,7 @@ def forgot_password(
     )
 
     try:
-        normalized_email = normalize_email(request.email)
+        normalized_email = normalize_email(request_body.email)
 
         user = db.query(User).filter(User.email == normalized_email).first()
         if not user:
