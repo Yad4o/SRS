@@ -1,55 +1,112 @@
+# =============================================================================
+# SRS — Docker Compose (production-grade)
+# =============================================================================
+# ALL secrets are injected via environment variables — never hardcoded here.
+#
+# Quick start
+# -----------
+# 1. Copy .env.example → .env and fill in every required variable.
+# 2. Run:  docker compose up -d
+#
+# Required env vars (must be set before running):
+#   POSTGRES_PASSWORD   — strong random password for the DB superuser
+#   POSTGRES_USER       — database username (default: srs_user)
+#   POSTGRES_DB         — database name    (default: srs_db)
+#   SECRET_KEY          — 32+ character random string for JWT signing
+#   OPENAI_API_KEY      — your OpenAI key
+#   RESEND_API_KEY      — your Resend key (for OTP emails)
+#
+# Optional env vars:
+#   REDIS_URL           — overrides the default internal Redis URL
+#   SENTRY_DSN          — error tracking (omit to disable)
+#   AUTH_RATE_LIMIT_LOGIN          — e.g. "10/minute"
+#   AUTH_RATE_LIMIT_FORGOT_PASSWORD — e.g. "5/minute"
+# =============================================================================
+
 services:
-  # PostgreSQL Database
+
+  # ---------------------------------------------------------------------------
+  # PostgreSQL
+  # ---------------------------------------------------------------------------
   db:
-    image: postgres:15
+    image: postgres:15-alpine
     environment:
-      POSTGRES_DB: srs_db
-      POSTGRES_USER: srs_user
-      POSTGRES_PASSWORD: srs_password
+      POSTGRES_DB:       ${POSTGRES_DB:-srs_db}
+      POSTGRES_USER:     ${POSTGRES_USER:-srs_user}
+      # POSTGRES_PASSWORD MUST be supplied via the host environment or a
+      # .env file.  There is intentionally no fallback default here.
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD must be set}
     volumes:
       - postgres_data:/var/lib/postgresql/data
-      # - ./init.sql:/docker-entrypoint-initdb.d/init.sql # Add init script if needed
+      # - ./init.sql:/docker-entrypoint-initdb.d/init.sql
+    # Bind only to localhost — the DB must not be reachable from outside
+    # the compose network.  Remove this ports block entirely in production.
     ports:
-      - "5432:5432"
+      - "127.0.0.1:5432:5432"
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U srs_user -d srs_db"]
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-srs_user} -d ${POSTGRES_DB:-srs_db}"]
       interval: 10s
       timeout: 5s
       retries: 5
+    restart: unless-stopped
 
-  # Redis (for caching)
+  # ---------------------------------------------------------------------------
+  # Redis (optional caching layer)
+  # ---------------------------------------------------------------------------
   redis:
     image: redis:7-alpine
-    ports:
-      - "6379:6379"
+    command: ["redis-server", "--save", "60", "1", "--loglevel", "warning"]
     volumes:
       - redis_data:/data
+    ports:
+      - "127.0.0.1:6379:6379"
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
       interval: 10s
       timeout: 5s
       retries: 5
+    restart: unless-stopped
 
-  # Backend API
+  # ---------------------------------------------------------------------------
+  # FastAPI application
+  # ---------------------------------------------------------------------------
   api:
     build: .
     ports:
-      - "8000:8000"
+      - "127.0.0.1:8000:8000"
     environment:
-      - DATABASE_URL=postgresql://srs_user:srs_password@db:5432/srs_db
-      - REDIS_URL=redis://redis:6379
-      - SECRET_KEY=your-secret-key-change-in-production
-      - OPENAI_API_KEY=your-openai-key
-      - ENVIRONMENT=production
-      # Resend Configuration for OTP emails
-      - RESEND_API_KEY=${RESEND_API_KEY}
+      # ---- Database ---------------------------------------------------------
+      # The password is forwarded from the host env — never hardcoded.
+      DATABASE_URL: "postgresql://${POSTGRES_USER:-srs_user}:${POSTGRES_PASSWORD:?POSTGRES_PASSWORD must be set}@db:5432/${POSTGRES_DB:-srs_db}"
+
+      # ---- Cache ------------------------------------------------------------
+      REDIS_URL: "${REDIS_URL:-redis://redis:6379}"
+
+      # ---- Security ---------------------------------------------------------
+      # Must be a cryptographically random string of at least 32 characters.
+      # Generate with:  python -c "import secrets; print(secrets.token_hex(32))"
+      SECRET_KEY: "${SECRET_KEY:?SECRET_KEY must be set — generate with: python -c \"import secrets; print(secrets.token_hex(32))\"}"
+
+      # ---- AI / Email -------------------------------------------------------
+      OPENAI_API_KEY:  "${OPENAI_API_KEY:?OPENAI_API_KEY must be set}"
+      RESEND_API_KEY:  "${RESEND_API_KEY}"
+
+      # ---- Runtime ----------------------------------------------------------
+      ENVIRONMENT: "${ENVIRONMENT:-production}"
+      LOG_LEVEL:   "${LOG_LEVEL:-INFO}"
+
+      # ---- Error tracking (optional) ----------------------------------------
+      SENTRY_DSN: "${SENTRY_DSN:-}"
+
+      # ---- Rate limiting (optional overrides) --------------------------------
+      AUTH_RATE_LIMIT_LOGIN:           "${AUTH_RATE_LIMIT_LOGIN:-10/minute}"
+      AUTH_RATE_LIMIT_FORGOT_PASSWORD: "${AUTH_RATE_LIMIT_FORGOT_PASSWORD:-5/minute}"
+
     depends_on:
       db:
         condition: service_healthy
       redis:
         condition: service_healthy
-    volumes:
-      - ./app:/app/app
     restart: unless-stopped
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"]
@@ -57,19 +114,23 @@ services:
       timeout: 10s
       retries: 3
 
-  # Nginx Reverse Proxy (Optional)
-  nginx:
-    image: nginx:alpine
-    ports:
-      - "80:80"
-      - "443:443"
-    volumes:
-      # - ./nginx.conf:/etc/nginx/nginx.conf # Create nginx.conf before enabling
-      # - ./ssl:/etc/nginx/ssl # Create ssl directory if using HTTPS
-      []
-    depends_on:
-      - api
-    restart: unless-stopped
+  # ---------------------------------------------------------------------------
+  # Nginx reverse proxy + TLS termination
+  # Enable this block once nginx.conf and SSL certificates are in place.
+  # See docs/deployment/NGINX.md for setup instructions.
+  # ---------------------------------------------------------------------------
+  # nginx:
+  #   image: nginx:1.25-alpine
+  #   ports:
+  #     - "80:80"
+  #     - "443:443"
+  #   volumes:
+  #     - ./nginx.conf:/etc/nginx/nginx.conf:ro
+  #     - ./ssl:/etc/nginx/ssl:ro
+  #   depends_on:
+  #     api:
+  #       condition: service_healthy
+  #   restart: unless-stopped
 
 volumes:
   postgres_data:
