@@ -154,52 +154,69 @@ def list_tickets(
     token: str | None = Depends(oauth2_scheme_optional),
 ) -> TicketList:
     """
-    List all tickets with optional status filtering.
-    
+    List tickets visible to the authenticated caller.
+
+    Access rules
+    ------------
+    - Unauthenticated callers receive an empty list so anonymous-submitted
+      tickets are not exposed to arbitrary internet requests.
+    - Regular users see only their own tickets (user_id == caller).
+    - Agents and admins see all tickets.
+
+    Background on the original bug
+    --------------------------------
+    The previous code applied ``Ticket.user_id == user_id`` even when
+    user_id was None.  SQLAlchemy translates ``Column == None`` to
+    ``IS NULL``, so unauthenticated callers silently received every ticket
+    with no owner (CWE-284 / improper access control).
+
     Args:
         ticket_status: Optional status filter
+        limit: Page size (1–100)
+        offset: Pagination offset
         db: Database session dependency
-        
+        token: Optional Bearer token
+
     Returns:
-        TicketList: List of tickets matching criteria
-        
+        TicketList: Tickets scoped to the caller's access level
+
     Raises:
-        HTTPException: If database operation fails
+        HTTPException 500 – database error
     """
     try:
-        # Extract user_id and role from optional token
         user_id, user_role = extract_user_id_and_role_from_token(token)
 
-        # Build query
+        is_privileged = user_role in (UserRole.ADMIN.value, UserRole.AGENT.value)
+
+        # Unauthenticated callers receive an empty list.
+        # Returning all user_id=NULL tickets to anonymous requests would
+        # expose tickets submitted by other unauthenticated users.
+        if user_id is None and not is_privileged:
+            return TicketList(tickets=[], total=0)
+
         query = db.query(Ticket)
-        
+
         # Apply status filter if provided
         if ticket_status:
             query = query.filter(Ticket.status == ticket_status)
-        
-        # Apply user filter for non-admin/agent users
-        if user_id and user_role not in [UserRole.ADMIN.value, UserRole.AGENT.value]:
-            query = query.filter(Ticket.user_id == user_id)
-        
-        # Get total before pagination
-        total = query.count()
 
-        # Execute query with pagination (order by creation date, newest first)
+        # Scope to caller's own tickets unless they are an agent or admin
+        if not is_privileged:
+            query = query.filter(Ticket.user_id == user_id)
+
+        total = query.count()
         tickets = query.order_by(Ticket.created_at.desc()).limit(limit).offset(offset).all()
-        
-        # Convert to response schemas
+
         ticket_responses = [TicketResponse.model_validate(ticket) for ticket in tickets]
-        
         return TicketList(tickets=ticket_responses, total=total)
-        
+
     except HTTPException:
-        # Re-raise HTTP exceptions (including 401 from token validation)
         raise
-    except Exception as e:
+    except Exception:
         logger.exception("Failed to retrieve tickets")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Internal server error occurred while retrieving tickets"
+            detail="Internal server error occurred while retrieving tickets",
         )
 
 
