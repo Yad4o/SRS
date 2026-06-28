@@ -17,6 +17,8 @@ DO NOT:
 
 """
 
+import hashlib
+import hmac
 import logging
 import os
 import secrets
@@ -39,6 +41,48 @@ def generate_otp() -> str:
         6-digit numeric OTP string
     """
     return ''.join(secrets.choice(string.digits) for _ in range(6))
+
+
+def hash_otp(otp: str) -> str:
+    """
+    Return an HMAC-SHA256 hex digest of the OTP, keyed on the application
+    SECRET_KEY.
+
+    Why HMAC instead of plain SHA-256?
+    A 6-digit numeric OTP has only 10^6 possible values.  A plain SHA-256
+    digest can be brute-forced offline in milliseconds once the DB is read
+    (precompute all 1,000,000 digests, lookup in O(1)).  Keying the digest
+    with a server-side secret means an attacker who reads the DB but does
+    not have the SECRET_KEY cannot mount that offline attack.
+
+    Args:
+        otp: Plaintext OTP string (e.g. '482910')
+
+    Returns:
+        64-character lowercase hex string (HMAC-SHA256 digest)
+    """
+    return hmac.new(
+        settings.SECRET_KEY.encode("utf-8"),
+        otp.encode("utf-8"),
+        hashlib.sha256,
+    ).hexdigest()
+
+
+def verify_otp_hash(candidate_otp: str, stored_hash: str) -> bool:
+    """
+    Compare a candidate OTP against a stored HMAC-SHA256 digest in constant time.
+
+    Uses ``hmac.compare_digest`` (identical to secrets.compare_digest but
+    semantically clearer for MAC comparisons) to prevent timing-oracle attacks.
+
+    Args:
+        candidate_otp: The plaintext OTP supplied by the user.
+        stored_hash:   The HMAC-SHA256 hex digest persisted in the database.
+
+    Returns:
+        True if the candidate matches the stored hash, False otherwise.
+    """
+    return hmac.compare_digest(hash_otp(candidate_otp), stored_hash)
 
 
 def send_otp_email(email: str, otp: str) -> bool:

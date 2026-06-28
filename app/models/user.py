@@ -82,10 +82,12 @@ class User(Base):
     )
 
     # Password reset fields
+    # The OTP itself is never stored here — only its SHA-256 hex digest
+    # (64 characters).  See app/core/otp.py: hash_otp / verify_otp_hash.
     reset_otp = Column(
-        String(6),
+        String(64),
         nullable=True,
-        doc="6-digit OTP for password reset",
+        doc="SHA-256 hex digest of the 6-digit password-reset OTP",
     )
 
     reset_otp_expires_at = Column(

@@ -154,52 +154,69 @@ def list_tickets(
     token: str | None = Depends(oauth2_scheme_optional),
 ) -> TicketList:
     """
-    List all tickets with optional status filtering.
-    
+    List tickets visible to the authenticated caller.
+
+    Access rules
+    ------------
+    - Unauthenticated callers receive an empty list so anonymous-submitted
+      tickets are not exposed to arbitrary internet requests.
+    - Regular users see only their own tickets (user_id == caller).
+    - Agents and admins see all tickets.
+
+    Background on the original bug
+    --------------------------------
+    The previous code applied ``Ticket.user_id == user_id`` even when
+    user_id was None.  SQLAlchemy translates ``Column == None`` to
+    ``IS NULL``, so unauthenticated callers silently received every ticket
+    with no owner (CWE-284 / improper access control).
+
     Args:
         ticket_status: Optional status filter
+        limit: Page size (1–100)
+        offset: Pagination offset
         db: Database session dependency
-        
+        token: Optional Bearer token
+
     Returns:
-        TicketList: List of tickets matching criteria
-        
+        TicketList: Tickets scoped to the caller's access level
+
     Raises:
-        HTTPException: If database operation fails
+        HTTPException 500 – database error
     """
     try:
-        # Extract user_id and role from optional token
         user_id, user_role = extract_user_id_and_role_from_token(token)
 
-        # Build query
+        is_privileged = user_role in (UserRole.ADMIN.value, UserRole.AGENT.value)
+
+        # Unauthenticated callers receive an empty list.
+        # Returning all user_id=NULL tickets to anonymous requests would
+        # expose tickets submitted by other unauthenticated users.
+        if user_id is None and not is_privileged:
+            return TicketList(tickets=[], total=0)
+
         query = db.query(Ticket)
-        
+
         # Apply status filter if provided
         if ticket_status:
             query = query.filter(Ticket.status == ticket_status)
-        
-        # Apply user filter for non-admin/agent users
-        if user_id and user_role not in [UserRole.ADMIN.value, UserRole.AGENT.value]:
-            query = query.filter(Ticket.user_id == user_id)
-        
-        # Get total before pagination
-        total = query.count()
 
-        # Execute query with pagination (order by creation date, newest first)
+        # Scope to caller's own tickets unless they are an agent or admin
+        if not is_privileged:
+            query = query.filter(Ticket.user_id == user_id)
+
+        total = query.count()
         tickets = query.order_by(Ticket.created_at.desc()).limit(limit).offset(offset).all()
-        
-        # Convert to response schemas
+
         ticket_responses = [TicketResponse.model_validate(ticket) for ticket in tickets]
-        
         return TicketList(tickets=ticket_responses, total=total)
-        
+
     except HTTPException:
-        # Re-raise HTTP exceptions (including 401 from token validation)
         raise
-    except Exception as e:
+    except Exception:
         logger.exception("Failed to retrieve tickets")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Internal server error occurred while retrieving tickets"
+            detail="Internal server error occurred while retrieving tickets",
         )
 
 
@@ -227,40 +244,74 @@ def tickets_health():
 def get_ticket(
     ticket_id: int,
     db: Session = Depends(get_db),
+    token: str | None = Depends(oauth2_scheme_optional),
 ) -> TicketResponse:
     """
     Retrieve a single ticket by ID.
-    
+
+    Access rules
+    ------------
+    - Unauthenticated callers receive 401 (tickets always belong to someone).
+    - Regular users may only fetch their own tickets (404 otherwise, to avoid
+      confirming ticket existence to unauthorised callers).
+    - Agents and admins may fetch any ticket.
+
     Args:
         ticket_id: ID of the ticket to retrieve
         db: Database session dependency
-        
+        token: Optional Bearer token (unauthenticated → 401)
+
     Returns:
         TicketResponse: The requested ticket
-        
+
     Raises:
-        HTTPException: If ticket not found (404) or database error (500)
+        HTTPException 401 - no valid token supplied
+        HTTPException 404 - ticket not found or not visible to the authenticated user
+        HTTPException 500 - database error
     """
     try:
-        # Query ticket by ID
+        # --- Auth gate -------------------------------------------------------
+        # Resolve caller identity; unauthenticated requests are rejected so
+        # users cannot probe arbitrary ticket IDs without a valid session.
+        user_id, user_role = extract_user_id_and_role_from_token(token)
+
+        if user_id is None:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Authentication required to access ticket details",
+                headers={"WWW-Authenticate": "Bearer"},
+            )
+
+        # --- Fetch -----------------------------------------------------------
         ticket = db.query(Ticket).filter(Ticket.id == ticket_id).first()
-        
+
         if not ticket:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
-                detail=f"Ticket with ID {ticket_id} not found"
+                detail=f"Ticket with ID {ticket_id} not found",
             )
-        
+
+        # --- Ownership check -------------------------------------------------
+        # Agents and admins can view any ticket; regular users are restricted
+        # to their own submissions.
+        is_privileged = user_role in (UserRole.ADMIN.value, UserRole.AGENT.value)
+        if not is_privileged and ticket.user_id != user_id:
+            # Return 404 instead of 403 to avoid confirming ticket existence
+            # to unauthorised callers (OWASP IDOR guidance).
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"Ticket with ID {ticket_id} not found",
+            )
+
         return TicketResponse.model_validate(ticket)
-        
+
     except HTTPException:
-        # Re-raise HTTP exceptions (like 404)
         raise
-    except Exception as e:
+    except Exception:
         logger.exception(f"Failed to retrieve ticket {ticket_id}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Internal server error occurred while retrieving ticket"
+            detail="Internal server error occurred while retrieving ticket",
         )
 
 

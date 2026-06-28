@@ -24,7 +24,7 @@ References:
 import logging
 import secrets
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Request, status
 from fastapi.security import OAuth2PasswordBearer
 from sqlalchemy.orm import Session
 from sqlalchemy.exc import IntegrityError, SQLAlchemyError
@@ -44,12 +44,14 @@ from app.constants import (
     INVALID_OTP,
     OTP_EXPIRED,
     MAX_OTP_ATTEMPTS,
-    EMAIL_SEND_FAILED
+    EMAIL_SEND_FAILED,
+    FORGOT_PASSWORD_SAFE_RESPONSE,
 )
 
 from app.core.security import verify_password, create_access_token, hash_password, decode_token, check_password_truncation
 from app.core.config import settings, ALLOWED_ROLES
-from app.core.otp import generate_otp, send_otp_email, log_otp_for_dev, is_otp_expired, get_otp_expiration_time
+from app.core.limiter import limiter
+from app.core.otp import generate_otp, hash_otp, verify_otp_hash, send_otp_email, log_otp_for_dev, is_otp_expired, get_otp_expiration_time
 from app.db.session import get_db
 from app.models.user import User
 from app.schemas.user import (
@@ -228,7 +230,9 @@ def create_user(db: Session, user_create: UserCreate) -> UserResponse:
 
 
 @router.post("/login", response_model=Token)
+@limiter.limit(settings.AUTH_RATE_LIMIT_LOGIN)
 def login(
+    request: Request,
     user_credentials: UserLogin,
     db: Annotated[Session, Depends(get_db)]
 ):
@@ -371,72 +375,97 @@ def get_current_user_info(
 
 
 @router.post("/forgot-password", response_model=ForgotPasswordResponse)
+@limiter.limit(settings.AUTH_RATE_LIMIT_FORGOT_PASSWORD)
 def forgot_password(
-    request: ForgotPasswordRequest,
-    db: Annotated[Session, Depends(get_db)]
+    request: Request,
+    request_body: ForgotPasswordRequest,
+    background_tasks: BackgroundTasks,
+    db: Annotated[Session, Depends(get_db)],
 ):
     """
-    Send OTP to user's email for password reset.
-    
+    Initiate password reset by sending an OTP to the supplied email.
+
+    SECURITY NOTES
+    --------------
+    1. User enumeration (CWE-204): always returns HTTP 200 with an identical
+       body whether or not the email is registered.
+
+    2. Timing oracle: the slow Resend API call is dispatched as a FastAPI
+       BackgroundTask so both the "user not found" and "user found" paths
+       return at the same wall-clock time from the caller's perspective.
+       DB writes are synchronous (fast); only network I/O is deferred.
+
     Args:
-        request: ForgotPasswordRequest with user email
+        request: FastAPI Request (required by SlowAPI rate-limiter)
+        request_body: ForgotPasswordRequest with user email
+        background_tasks: FastAPI BackgroundTasks for async OTP delivery
         db: Database session dependency
-        
+
     Returns:
-        ForgotPasswordResponse with success message and OTP expiration time
-        
+        ForgotPasswordResponse with a safe, non-leaking success message
+
     Raises:
-        HTTPException: If email not found (404) or email send fails (500)
+        HTTPException 500 - database or unexpected internal error
     """
+    # SECURITY: response body is identical regardless of email existence.
+    _safe_response = ForgotPasswordResponse(
+        message=FORGOT_PASSWORD_SAFE_RESPONSE,
+        otp_expires_in=10,
+    )
+
+    def _deliver_otp(email: str, otp: str) -> None:
+        """Background task: deliver OTP without blocking the HTTP response."""
+        if not send_otp_email(email, otp):
+            # Only log the raw OTP in development; in other envs log a generic
+            # delivery-failure message so reset codes never appear in prod logs.
+            if settings.ENV == "development":
+                log_otp_for_dev(email, otp)
+            else:
+                logger.warning(
+                    "OTP email delivery failed for user (email suppressed)"
+                )
+
     try:
-        # Normalize email
-        normalized_email = normalize_email(request.email)
-        
-        # Find user by email
+        normalized_email = normalize_email(request_body.email)
+
         user = db.query(User).filter(User.email == normalized_email).first()
         if not user:
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail=EMAIL_NOT_FOUND
+            # Log at DEBUG only — never surface to the caller.
+            logger.debug(
+                "forgot_password: no account for email (suppressed from response)"
             )
-        
-        # Generate OTP
+            return _safe_response
+
+        # Generate and persist HMAC-keyed OTP hash — never the raw token.
         otp = generate_otp()
         otp_expires_at = get_otp_expiration_time(10)  # 10 minutes
-        
-        # Update user with OTP
-        user.reset_otp = otp
+
+        user.reset_otp = hash_otp(otp)
         user.reset_otp_expires_at = otp_expires_at
         user.reset_otp_attempts = 0
-        
+
         db.commit()
-        
-        # Send OTP email (or log for development)
-        email_sent = send_otp_email(user.email, otp)
-        if not email_sent:
-            # For development, log the OTP instead of failing
-            log_otp_for_dev(user.email, otp)
-        
-        return ForgotPasswordResponse(
-            message="OTP sent to your email address",
-            otp_expires_in=10
-        )
-        
-    except SQLAlchemyError as e:
+
+        # Dispatch delivery off the hot path to avoid a timing side-channel.
+        background_tasks.add_task(_deliver_otp, user.email, otp)
+
+        return _safe_response
+
+    except SQLAlchemyError:
         logger.exception("Database error in forgot_password")
         db.rollback()
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=AUTH_SERVICE_UNAVAILABLE
+            detail=AUTH_SERVICE_UNAVAILABLE,
         )
     except HTTPException:
         raise
-    except Exception as e:
+    except Exception:
         logger.exception("Unexpected error in forgot_password")
         db.rollback()
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=AUTH_SERVICE_UNAVAILABLE
+            detail=AUTH_SERVICE_UNAVAILABLE,
         )
 
 
@@ -480,8 +509,8 @@ def _verify_user_otp(db: Session, email: str, otp: str) -> User:
             detail=MAX_OTP_ATTEMPTS
         )
     
-    # Verify OTP
-    if not secrets.compare_digest(str(user.reset_otp), str(otp)):
+    # Verify OTP — compare against the stored SHA-256 hash in constant time
+    if not verify_otp_hash(str(otp), str(user.reset_otp)):
         # Increment attempts
         user.reset_otp_attempts += 1
         db.commit()

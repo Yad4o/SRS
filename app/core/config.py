@@ -126,6 +126,11 @@ class Settings(BaseSettings):
     # Rate Limiting
     # -------------------------------------------------
     RATE_LIMIT_PER_MINUTE: int = 60
+    # Stricter limits for credential-bearing endpoints to slow brute-force
+    # and OTP enumeration attacks.  These are intentionally much lower than
+    # the general API limit.
+    AUTH_RATE_LIMIT_LOGIN: str = "10/minute"
+    AUTH_RATE_LIMIT_FORGOT_PASSWORD: str = "5/minute"
     
     # -------------------------------------------------
     # Support Configuration
