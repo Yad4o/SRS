@@ -18,6 +18,7 @@ DO NOT:
 """
 
 import hashlib
+import hmac
 import logging
 import os
 import secrets
@@ -44,34 +45,44 @@ def generate_otp() -> str:
 
 def hash_otp(otp: str) -> str:
     """
-    Return a SHA-256 hex digest of the supplied OTP.
+    Return an HMAC-SHA256 hex digest of the OTP, keyed on the application
+    SECRET_KEY.
 
-    The hash is stored in the database instead of the raw token so that
-    a read-access DB compromise does not expose pending reset codes.
+    Why HMAC instead of plain SHA-256?
+    A 6-digit numeric OTP has only 10^6 possible values.  A plain SHA-256
+    digest can be brute-forced offline in milliseconds once the DB is read
+    (precompute all 1,000,000 digests, lookup in O(1)).  Keying the digest
+    with a server-side secret means an attacker who reads the DB but does
+    not have the SECRET_KEY cannot mount that offline attack.
 
     Args:
         otp: Plaintext OTP string (e.g. '482910')
 
     Returns:
-        64-character lowercase hex string (SHA-256 digest)
+        64-character lowercase hex string (HMAC-SHA256 digest)
     """
-    return hashlib.sha256(otp.encode()).hexdigest()
+    return hmac.new(
+        settings.SECRET_KEY.encode("utf-8"),
+        otp.encode("utf-8"),
+        hashlib.sha256,
+    ).hexdigest()
 
 
 def verify_otp_hash(candidate_otp: str, stored_hash: str) -> bool:
     """
-    Compare a candidate OTP against a stored SHA-256 hash in constant time.
+    Compare a candidate OTP against a stored HMAC-SHA256 digest in constant time.
 
-    Uses ``secrets.compare_digest`` to prevent timing-oracle attacks.
+    Uses ``hmac.compare_digest`` (identical to secrets.compare_digest but
+    semantically clearer for MAC comparisons) to prevent timing-oracle attacks.
 
     Args:
         candidate_otp: The plaintext OTP supplied by the user.
-        stored_hash:   The SHA-256 hex digest persisted in the database.
+        stored_hash:   The HMAC-SHA256 hex digest persisted in the database.
 
     Returns:
         True if the candidate matches the stored hash, False otherwise.
     """
-    return secrets.compare_digest(hash_otp(candidate_otp), stored_hash)
+    return hmac.compare_digest(hash_otp(candidate_otp), stored_hash)
 
 
 def send_otp_email(email: str, otp: str) -> bool:

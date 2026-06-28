@@ -24,7 +24,7 @@ References:
 import logging
 import secrets
 
-from fastapi import APIRouter, Depends, HTTPException, Request, status
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Request, status
 from fastapi.security import OAuth2PasswordBearer
 from sqlalchemy.orm import Session
 from sqlalchemy.exc import IntegrityError, SQLAlchemyError
@@ -379,60 +379,75 @@ def get_current_user_info(
 def forgot_password(
     request: Request,
     request_body: ForgotPasswordRequest,
-    db: Annotated[Session, Depends(get_db)]
+    background_tasks: BackgroundTasks,
+    db: Annotated[Session, Depends(get_db)],
 ):
     """
     Initiate password reset by sending an OTP to the supplied email.
 
-    SECURITY NOTE: This endpoint always returns HTTP 200 with an identical
-    body regardless of whether the email is registered — see the handler
-    body for the rationale (user enumeration / CWE-204 prevention).
+    SECURITY NOTES
+    --------------
+    1. User enumeration (CWE-204): always returns HTTP 200 with an identical
+       body whether or not the email is registered.
+
+    2. Timing oracle: the slow Resend API call is dispatched as a FastAPI
+       BackgroundTask so both the "user not found" and "user found" paths
+       return at the same wall-clock time from the caller's perspective.
+       DB writes are synchronous (fast); only network I/O is deferred.
 
     Args:
         request: FastAPI Request (required by SlowAPI rate-limiter)
         request_body: ForgotPasswordRequest with user email
+        background_tasks: FastAPI BackgroundTasks for async OTP delivery
         db: Database session dependency
 
     Returns:
         ForgotPasswordResponse with a safe, non-leaking success message
 
     Raises:
-        HTTPException 500 – database or unexpected internal error
+        HTTPException 500 - database or unexpected internal error
     """
-    # SECURITY: The response MUST be identical whether or not the email
-    # exists.  Diverging on 404 vs 200 leaks registered addresses (user
-    # enumeration, CWE-204).  We always return the safe message; internal
-    # errors still surface as 500 so callers can retry.
+    # SECURITY: response body is identical regardless of email existence.
     _safe_response = ForgotPasswordResponse(
         message=FORGOT_PASSWORD_SAFE_RESPONSE,
         otp_expires_in=10,
     )
+
+    def _deliver_otp(email: str, otp: str) -> None:
+        """Background task: deliver OTP without blocking the HTTP response."""
+        if not send_otp_email(email, otp):
+            # Only log the raw OTP in development; in other envs log a generic
+            # delivery-failure message so reset codes never appear in prod logs.
+            if settings.ENV == "development":
+                log_otp_for_dev(email, otp)
+            else:
+                logger.warning(
+                    "OTP email delivery failed for user (email suppressed)"
+                )
 
     try:
         normalized_email = normalize_email(request_body.email)
 
         user = db.query(User).filter(User.email == normalized_email).first()
         if not user:
-            # Do NOT raise — log at debug level and return the same 200 body
-            # so an attacker cannot tell whether the address is registered.
+            # Log at DEBUG only — never surface to the caller.
             logger.debug(
                 "forgot_password: no account for email (suppressed from response)"
             )
             return _safe_response
 
-        # Generate and persist OTP — store the SHA-256 hash, not the raw token.
+        # Generate and persist HMAC-keyed OTP hash — never the raw token.
         otp = generate_otp()
         otp_expires_at = get_otp_expiration_time(10)  # 10 minutes
 
-        user.reset_otp = hash_otp(otp)   # never persist plaintext OTP
+        user.reset_otp = hash_otp(otp)
         user.reset_otp_expires_at = otp_expires_at
         user.reset_otp_attempts = 0
 
         db.commit()
 
-        # Deliver OTP — fall back to dev-log when Resend is not configured
-        if not send_otp_email(user.email, otp):
-            log_otp_for_dev(user.email, otp)
+        # Dispatch delivery off the hot path to avoid a timing side-channel.
+        background_tasks.add_task(_deliver_otp, user.email, otp)
 
         return _safe_response
 
