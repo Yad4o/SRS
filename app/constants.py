@@ -55,6 +55,9 @@ INVALID_OTP = "Invalid or expired OTP"
 OTP_EXPIRED = "OTP has expired"
 MAX_OTP_ATTEMPTS = "Maximum OTP attempts exceeded. Please request a new OTP"
 EMAIL_SEND_FAILED = "Failed to send OTP email. Please try again"
+FORGOT_PASSWORD_SAFE_RESPONSE = (
+    "If an account with that email address exists, an OTP has been sent to it"
+)
 
 # General error messages
 VALIDATION_FAILED = "Validation failed"

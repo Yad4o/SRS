@@ -44,7 +44,8 @@ from app.constants import (
     INVALID_OTP,
     OTP_EXPIRED,
     MAX_OTP_ATTEMPTS,
-    EMAIL_SEND_FAILED
+    EMAIL_SEND_FAILED,
+    FORGOT_PASSWORD_SAFE_RESPONSE,
 )
 
 from app.core.security import verify_password, create_access_token, hash_password, decode_token, check_password_truncation
@@ -388,55 +389,58 @@ def forgot_password(
     Raises:
         HTTPException: If email not found (404) or email send fails (500)
     """
+    # SECURITY: The response MUST be identical whether or not the email
+    # exists.  Diverging on 404 vs 200 leaks registered addresses (user
+    # enumeration, CWE-204).  We always return the safe message; internal
+    # errors still surface as 500 so callers can retry.
+    _safe_response = ForgotPasswordResponse(
+        message=FORGOT_PASSWORD_SAFE_RESPONSE,
+        otp_expires_in=10,
+    )
+
     try:
-        # Normalize email
         normalized_email = normalize_email(request.email)
-        
-        # Find user by email
+
         user = db.query(User).filter(User.email == normalized_email).first()
         if not user:
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail=EMAIL_NOT_FOUND
+            # Do NOT raise — log at debug level and return the same 200 body
+            # so an attacker cannot tell whether the address is registered.
+            logger.debug(
+                "forgot_password: no account for email (suppressed from response)"
             )
-        
-        # Generate OTP
+            return _safe_response
+
+        # Generate and persist OTP
         otp = generate_otp()
         otp_expires_at = get_otp_expiration_time(10)  # 10 minutes
-        
-        # Update user with OTP
+
         user.reset_otp = otp
         user.reset_otp_expires_at = otp_expires_at
         user.reset_otp_attempts = 0
-        
+
         db.commit()
-        
-        # Send OTP email (or log for development)
-        email_sent = send_otp_email(user.email, otp)
-        if not email_sent:
-            # For development, log the OTP instead of failing
+
+        # Deliver OTP — fall back to dev-log when Resend is not configured
+        if not send_otp_email(user.email, otp):
             log_otp_for_dev(user.email, otp)
-        
-        return ForgotPasswordResponse(
-            message="OTP sent to your email address",
-            otp_expires_in=10
-        )
-        
-    except SQLAlchemyError as e:
+
+        return _safe_response
+
+    except SQLAlchemyError:
         logger.exception("Database error in forgot_password")
         db.rollback()
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=AUTH_SERVICE_UNAVAILABLE
+            detail=AUTH_SERVICE_UNAVAILABLE,
         )
     except HTTPException:
         raise
-    except Exception as e:
+    except Exception:
         logger.exception("Unexpected error in forgot_password")
         db.rollback()
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=AUTH_SERVICE_UNAVAILABLE
+            detail=AUTH_SERVICE_UNAVAILABLE,
         )
 
 
