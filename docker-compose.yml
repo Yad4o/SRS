@@ -6,21 +6,27 @@
 # Quick start
 # -----------
 # 1. Copy .env.example → .env and fill in every required variable.
-# 2. Run:  docker compose up -d
+# 2. Run:  docker compose --env-file .env up -d
 #
 # Required env vars (must be set before running):
 #   POSTGRES_PASSWORD   — strong random password for the DB superuser
-#   POSTGRES_USER       — database username (default: srs_user)
-#   POSTGRES_DB         — database name    (default: srs_db)
-#   SECRET_KEY          — 32+ character random string for JWT signing
+#   SECRET_KEY          — 32+ char random string for JWT signing
 #   OPENAI_API_KEY      — your OpenAI key
 #   RESEND_API_KEY      — your Resend key (for OTP emails)
 #
-# Optional env vars:
-#   REDIS_URL           — overrides the default internal Redis URL
-#   SENTRY_DSN          — error tracking (omit to disable)
-#   AUTH_RATE_LIMIT_LOGIN          — e.g. "10/minute"
-#   AUTH_RATE_LIMIT_FORGOT_PASSWORD — e.g. "5/minute"
+# Optional env vars (sensible defaults shown):
+#   POSTGRES_USER                    default: srs_user
+#   POSTGRES_DB                      default: srs_db
+#   ENV                              default: production
+#   DEBUG                            default: false
+#   LOG_LEVEL                        default: INFO
+#   ACCESS_TOKEN_EXPIRE_MINUTES      default: 60
+#   AI_PROVIDER                      default: openai
+#   OPENAI_MODEL                     default: gpt-4o-mini
+#   CONFIDENCE_THRESHOLD_AUTO_RESOLVE default: 0.75
+#   AUTH_RATE_LIMIT_LOGIN            default: 10/minute
+#   AUTH_RATE_LIMIT_FORGOT_PASSWORD  default: 5/minute
+#   SENTRY_DSN                       default: (disabled)
 # =============================================================================
 
 services:
@@ -33,14 +39,13 @@ services:
     environment:
       POSTGRES_DB:       ${POSTGRES_DB:-srs_db}
       POSTGRES_USER:     ${POSTGRES_USER:-srs_user}
-      # POSTGRES_PASSWORD MUST be supplied via the host environment or a
-      # .env file.  There is intentionally no fallback default here.
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD must be set}
+      # No default — compose fails loudly if this is missing.
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD must be set. Generate with: python -c "import secrets; print(secrets.token_urlsafe(24))"}
     volumes:
       - postgres_data:/var/lib/postgresql/data
       # - ./init.sql:/docker-entrypoint-initdb.d/init.sql
-    # Bind only to localhost — the DB must not be reachable from outside
-    # the compose network.  Remove this ports block entirely in production.
+    # Bind to localhost only — DB must not be reachable from outside the
+    # compose network.  Remove this ports block entirely in production.
     ports:
       - "127.0.0.1:5432:5432"
     healthcheck:
@@ -76,31 +81,41 @@ services:
       - "127.0.0.1:8000:8000"
     environment:
       # ---- Database ---------------------------------------------------------
-      # The password is forwarded from the host env — never hardcoded.
       DATABASE_URL: "postgresql://${POSTGRES_USER:-srs_user}:${POSTGRES_PASSWORD:?POSTGRES_PASSWORD must be set}@db:5432/${POSTGRES_DB:-srs_db}"
 
       # ---- Cache ------------------------------------------------------------
-      REDIS_URL: "${REDIS_URL:-redis://redis:6379}"
+      REDIS_URL: "redis://redis:6379"
 
       # ---- Security ---------------------------------------------------------
       # Must be a cryptographically random string of at least 32 characters.
-      # Generate with:  python -c "import secrets; print(secrets.token_hex(32))"
+      # Generate with: python -c "import secrets; print(secrets.token_hex(32))"
       SECRET_KEY: "${SECRET_KEY:?SECRET_KEY must be set — generate with: python -c \"import secrets; print(secrets.token_hex(32))\"}"
 
       # ---- AI / Email -------------------------------------------------------
-      OPENAI_API_KEY:  "${OPENAI_API_KEY:?OPENAI_API_KEY must be set}"
-      RESEND_API_KEY:  "${RESEND_API_KEY}"
+      OPENAI_API_KEY: "${OPENAI_API_KEY:?OPENAI_API_KEY must be set}"
+      RESEND_API_KEY: "${RESEND_API_KEY:?RESEND_API_KEY must be set — get yours at https://resend.com}"
 
       # ---- Runtime ----------------------------------------------------------
-      ENVIRONMENT: "${ENVIRONMENT:-production}"
-      LOG_LEVEL:   "${LOG_LEVEL:-INFO}"
+      # ENV is the canonical setting name used by the app (Settings.ENV).
+      # ENVIRONMENT was previously used in compose but is not read by the app.
+      ENV:       "${ENV:-production}"
+      DEBUG:     "${DEBUG:-false}"
+      LOG_LEVEL: "${LOG_LEVEL:-INFO}"
+
+      # ---- Auth -------------------------------------------------------------
+      ACCESS_TOKEN_EXPIRE_MINUTES: "${ACCESS_TOKEN_EXPIRE_MINUTES:-60}"
+
+      # ---- AI model config --------------------------------------------------
+      AI_PROVIDER:    "${AI_PROVIDER:-openai}"
+      OPENAI_MODEL:   "${OPENAI_MODEL:-gpt-4o-mini}"
+      CONFIDENCE_THRESHOLD_AUTO_RESOLVE: "${CONFIDENCE_THRESHOLD_AUTO_RESOLVE:-0.75}"
+
+      # ---- Rate limiting ----------------------------------------------------
+      AUTH_RATE_LIMIT_LOGIN:           "${AUTH_RATE_LIMIT_LOGIN:-10/minute}"
+      AUTH_RATE_LIMIT_FORGOT_PASSWORD: "${AUTH_RATE_LIMIT_FORGOT_PASSWORD:-5/minute}"
 
       # ---- Error tracking (optional) ----------------------------------------
       SENTRY_DSN: "${SENTRY_DSN:-}"
-
-      # ---- Rate limiting (optional overrides) --------------------------------
-      AUTH_RATE_LIMIT_LOGIN:           "${AUTH_RATE_LIMIT_LOGIN:-10/minute}"
-      AUTH_RATE_LIMIT_FORGOT_PASSWORD: "${AUTH_RATE_LIMIT_FORGOT_PASSWORD:-5/minute}"
 
     depends_on:
       db:

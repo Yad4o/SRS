@@ -252,7 +252,8 @@ def get_ticket(
     Access rules
     ------------
     - Unauthenticated callers receive 401 (tickets always belong to someone).
-    - Regular users may only fetch their own tickets (403 otherwise).
+    - Regular users may only fetch their own tickets (404 otherwise, to avoid
+      confirming ticket existence to unauthorised callers).
     - Agents and admins may fetch any ticket.
 
     Args:
@@ -264,10 +265,9 @@ def get_ticket(
         TicketResponse: The requested ticket
 
     Raises:
-        HTTPException 401 – no valid token supplied
-        HTTPException 403 – authenticated user does not own this ticket
-        HTTPException 404 – ticket not found
-        HTTPException 500 – database error
+        HTTPException 401 - no valid token supplied
+        HTTPException 404 - ticket not found or not visible to the authenticated user
+        HTTPException 500 - database error
     """
     try:
         # --- Auth gate -------------------------------------------------------
