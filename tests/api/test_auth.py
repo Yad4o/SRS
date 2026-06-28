@@ -490,3 +490,105 @@ class TestTokenValidation:
             )
             assert response.status_code == 200
             assert "access_token" in response.json()
+
+
+class TestRefreshToken:
+    """Tests for POST /auth/refresh and POST /auth/logout (Issue #4 — refresh tokens)."""
+
+    def _register_and_login(self, test_client):
+        email = unique_email()
+        password = "Password123!"
+        test_client.post("/auth/register", json={"email": email, "password": password})
+        response = test_client.post("/auth/login", json={"email": email, "password": password})
+        return response.json()
+
+    def test_login_returns_refresh_token(self, test_client):
+        """Login response should include a refresh_token alongside the access_token."""
+        tokens = self._register_and_login(test_client)
+        assert "refresh_token" in tokens
+        assert isinstance(tokens["refresh_token"], str)
+        assert len(tokens["refresh_token"]) > 20
+
+    def test_refresh_returns_new_token_pair(self, test_client):
+        """A valid refresh token should yield a fresh access_token + refresh_token."""
+        tokens = self._register_and_login(test_client)
+
+        response = test_client.post(
+            "/auth/refresh", json={"refresh_token": tokens["refresh_token"]}
+        )
+        assert response.status_code == 200
+        new_tokens = response.json()
+        assert "access_token" in new_tokens
+        assert "refresh_token" in new_tokens
+        # Refresh tokens are random per-issuance and must never repeat.
+        assert new_tokens["refresh_token"] != tokens["refresh_token"]
+
+    def test_refresh_with_new_access_token_is_authorized(self, test_client):
+        """The access_token from /auth/refresh should work on protected routes."""
+        tokens = self._register_and_login(test_client)
+        refreshed = test_client.post(
+            "/auth/refresh", json={"refresh_token": tokens["refresh_token"]}
+        ).json()
+
+        response = test_client.get(
+            "/auth/me",
+            headers={"Authorization": f"Bearer {refreshed['access_token']}"},
+        )
+        assert response.status_code == 200
+
+    def test_refresh_token_rotation_invalidates_old_token(self, test_client):
+        """Using a refresh token must revoke it — a second use must fail (rotation)."""
+        tokens = self._register_and_login(test_client)
+        old_refresh_token = tokens["refresh_token"]
+
+        first = test_client.post("/auth/refresh", json={"refresh_token": old_refresh_token})
+        assert first.status_code == 200
+
+        replay = test_client.post("/auth/refresh", json={"refresh_token": old_refresh_token})
+        assert replay.status_code == 401
+
+    def test_refresh_with_invalid_token_returns_401(self, test_client):
+        """An unknown/garbage refresh token should be rejected."""
+        response = test_client.post(
+            "/auth/refresh", json={"refresh_token": "not-a-real-token"}
+        )
+        assert response.status_code == 401
+
+    def test_refresh_with_empty_token_returns_401(self, test_client):
+        """An empty refresh token should be rejected, not crash the server."""
+        response = test_client.post("/auth/refresh", json={"refresh_token": ""})
+        assert response.status_code == 401
+
+    def test_logout_revokes_refresh_token(self, test_client):
+        """After logout, the refresh token must no longer be usable."""
+        tokens = self._register_and_login(test_client)
+
+        logout_response = test_client.post(
+            "/auth/logout", json={"refresh_token": tokens["refresh_token"]}
+        )
+        assert logout_response.status_code == 200
+
+        reuse_response = test_client.post(
+            "/auth/refresh", json={"refresh_token": tokens["refresh_token"]}
+        )
+        assert reuse_response.status_code == 401
+
+    def test_logout_with_unknown_token_is_idempotent(self, test_client):
+        """Logging out with an already-invalid/unknown token should still succeed."""
+        response = test_client.post(
+            "/auth/logout", json={"refresh_token": "never-issued-token"}
+        )
+        assert response.status_code == 200
+
+    def test_two_users_refresh_tokens_are_independent(self, test_client):
+        """One user's refresh token must never grant another user's session."""
+        tokens_a = self._register_and_login(test_client)
+        tokens_b = self._register_and_login(test_client)
+
+        # Revoking user A's token must not affect user B's token.
+        test_client.post("/auth/logout", json={"refresh_token": tokens_a["refresh_token"]})
+
+        response_b = test_client.post(
+            "/auth/refresh", json={"refresh_token": tokens_b["refresh_token"]}
+        )
+        assert response_b.status_code == 200

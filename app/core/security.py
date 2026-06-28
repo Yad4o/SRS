@@ -20,7 +20,10 @@ References:
 - Technical Spec § 10.2 (Password Handling)
 """
 
+import hashlib
+import hmac
 import logging
+import secrets
 from datetime import datetime, timedelta, timezone
 
 from jose import JWTError, jwt
@@ -209,4 +212,75 @@ def decode_token(token: str) -> dict:
     except (JWTError, ValueError, UnicodeDecodeError) as e:
         # Re-raise JWT errors to ensure proper handling upstream
         raise JWTError(f"Invalid token: {str(e)}") from e
+
+
+# -------------------------------------------------
+# Refresh Token Utilities
+# -------------------------------------------------
+#
+# Refresh tokens are opaque random strings (not JWTs) so that revoking one
+# is a simple DB update rather than requiring a token-blocklist scheme.
+# Only the HMAC-SHA256 hash is ever persisted — the raw token is returned
+# to the client exactly once, at issuance/rotation time, the same pattern
+# already used for OTPs in app/core/otp.py.
+
+
+def create_refresh_token() -> str:
+    """
+    Generate a new cryptographically secure, opaque refresh token.
+
+    Returns:
+        str: A URL-safe random token (not a JWT — has no embedded claims).
+
+    Reference: Technical Spec § 10.1 (Authentication) — Issue #4 (refresh tokens)
+    """
+    return secrets.token_urlsafe(48)
+
+
+def hash_refresh_token(token: str) -> str:
+    """
+    Return an HMAC-SHA256 hex digest of a refresh token, keyed on SECRET_KEY.
+
+    Deterministic (unlike a salted bcrypt hash), so the resulting hash can
+    be looked up directly with an equality query against
+    RefreshToken.token_hash — necessary since refresh tokens, unlike
+    passwords, must be efficiently queryable by value.
+
+    Args:
+        token: The raw refresh token string.
+
+    Returns:
+        64-character lowercase hex string (HMAC-SHA256 digest).
+    """
+    return hmac.new(
+        settings.SECRET_KEY.encode("utf-8"),
+        token.encode("utf-8"),
+        hashlib.sha256,
+    ).hexdigest()
+
+
+def verify_refresh_token_hash(candidate_token: str, stored_hash: str) -> bool:
+    """
+    Compare a candidate refresh token against a stored HMAC-SHA256 digest
+    in constant time, to prevent timing-oracle attacks.
+
+    Args:
+        candidate_token: The raw refresh token supplied by the client.
+        stored_hash:      The HMAC-SHA256 hex digest persisted in the database.
+
+    Returns:
+        True if the candidate matches the stored hash, False otherwise.
+    """
+    return hmac.compare_digest(hash_refresh_token(candidate_token), stored_hash)
+
+
+def get_refresh_token_expiration_time() -> datetime:
+    """
+    Compute the expiration timestamp for a newly issued refresh token,
+    based on settings.REFRESH_TOKEN_EXPIRE_DAYS.
+
+    Returns:
+        datetime: Expiration timestamp (UTC, timezone-aware).
+    """
+    return datetime.now(timezone.utc) + timedelta(days=settings.REFRESH_TOKEN_EXPIRE_DAYS)
 

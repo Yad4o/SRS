@@ -168,6 +168,22 @@ class ResetPasswordRequest(BaseModel):
         return validate_password_complexity(v)
 
 
+class RefreshTokenRequest(BaseModel):
+    """
+    Schema for refreshing an access token.
+
+    Used in:
+    POST /auth/refresh
+    POST /auth/logout
+
+    Fields:
+    - refresh_token: The opaque refresh token issued at login or by a
+      previous call to /auth/refresh.
+    """
+
+    refresh_token: str
+
+
 # -------------------------------------------------
 # Response Schemas
 # -------------------------------------------------
@@ -195,22 +211,29 @@ class UserResponse(BaseModel):
 
 class Token(BaseModel):
     """
-    Schema returned after a successful login.
+    Schema returned after a successful login or token refresh.
 
     Contains a signed JWT access token that the client must send
-    in the Authorization header as ``Bearer <token>`` for protected routes.
+    in the Authorization header as ``Bearer <token>`` for protected routes,
+    plus a long-lived opaque refresh token for obtaining a new access
+    token via POST /auth/refresh without re-entering credentials.
 
     Used in:
     POST /auth/login (response)
+    POST /auth/refresh (response)
 
     Fields:
-    - access_token: The signed JWT string
-    - token_type:   Always "bearer" (OAuth 2.0 convention)
+    - access_token:  The signed JWT string
+    - refresh_token: Opaque random string; store it securely client-side
+                      (e.g. httpOnly cookie or secure storage — never in
+                      a place readable by third-party JS)
+    - token_type:    Always "bearer" (OAuth 2.0 convention)
 
     Reference: Technical Spec § 10.1 (Authentication)
     """
 
     access_token: str
+    refresh_token: str | None = None
     token_type: str = "bearer"
 
 
@@ -255,6 +278,20 @@ class ResetPasswordResponse(BaseModel):
 
     Fields:
     - message: Success message indicating password was reset
+    """
+
+    message: str
+
+
+class LogoutResponse(BaseModel):
+    """
+    Schema for logout response.
+
+    Used in:
+    POST /auth/logout (response)
+
+    Fields:
+    - message: Confirmation that the refresh token was revoked
     """
 
     message: str

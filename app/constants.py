@@ -58,6 +58,8 @@ EMAIL_SEND_FAILED = "Failed to send OTP email. Please try again"
 FORGOT_PASSWORD_SAFE_RESPONSE = (
     "If an account with that email address exists, an OTP has been sent to it"
 )
+INVALID_REFRESH_TOKEN = "Invalid or expired refresh token"
+REFRESH_TOKEN_REVOKED = "Refresh token has already been used or revoked"
 
 # General error messages
 VALIDATION_FAILED = "Validation failed"
@@ -127,5 +129,7 @@ __all__ = [
     "OTP_EXPIRED",
     "MAX_OTP_ATTEMPTS",
     "EMAIL_SEND_FAILED",
+    "INVALID_REFRESH_TOKEN",
+    "REFRESH_TOKEN_REVOKED",
 ]
 

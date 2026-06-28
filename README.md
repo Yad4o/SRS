@@ -429,6 +429,8 @@ def decide_resolution(confidence: float) -> str:
 |--------|----------|-------------|---------------|
 | `POST` | `/auth/login` | User login and token issuance | ❌ |
 | `POST` | `/auth/register` | New user registration | ❌ |
+| `POST` | `/auth/refresh` | Exchange a refresh token for a new access token (rotates the refresh token) | ❌ |
+| `POST` | `/auth/logout` | Revoke a refresh token | ❌ |
 
 ### 🎫 Ticket Endpoints
 

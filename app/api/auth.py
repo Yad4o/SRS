@@ -28,7 +28,7 @@ from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Request,
 from fastapi.security import OAuth2PasswordBearer
 from sqlalchemy.orm import Session
 from sqlalchemy.exc import IntegrityError, SQLAlchemyError
-from datetime import timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Annotated
 from jose import JWTError
 
@@ -46,19 +46,25 @@ from app.constants import (
     MAX_OTP_ATTEMPTS,
     EMAIL_SEND_FAILED,
     FORGOT_PASSWORD_SAFE_RESPONSE,
+    INVALID_REFRESH_TOKEN,
 )
 
-from app.core.security import verify_password, create_access_token, hash_password, decode_token, check_password_truncation
+from app.core.security import (
+    verify_password, create_access_token, hash_password, decode_token, check_password_truncation,
+    create_refresh_token, hash_refresh_token, verify_refresh_token_hash, get_refresh_token_expiration_time,
+)
 from app.core.config import settings, ALLOWED_ROLES
 from app.core.limiter import limiter
 from app.core.otp import generate_otp, hash_otp, verify_otp_hash, send_otp_email, log_otp_for_dev, is_otp_expired, get_otp_expiration_time
 from app.db.session import get_db
 from app.models.user import User
+from app.models.refresh_token import RefreshToken
 from app.schemas.user import (
     UserLogin, UserCreate, UserResponse, Token,
     ForgotPasswordRequest, ForgotPasswordResponse,
     VerifyOTPRequest, VerifyOTPResponse,
-    ResetPasswordRequest, ResetPasswordResponse
+    ResetPasswordRequest, ResetPasswordResponse,
+    RefreshTokenRequest, LogoutResponse,
 )
 
 # OAuth2 scheme for token authentication
@@ -229,6 +235,33 @@ def create_user(db: Session, user_create: UserCreate) -> UserResponse:
         )
 
 
+def _issue_refresh_token(db: Session, user_id: int) -> str:
+    """
+    Generate a new refresh token, persist its hash, and return the raw token.
+
+    The raw token is returned to the caller exactly once (here) — only its
+    HMAC-SHA256 hash is ever stored, mirroring the OTP-hashing pattern in
+    app/core/otp.py.
+
+    Args:
+        db: Database session
+        user_id: ID of the user this refresh token belongs to
+
+    Returns:
+        str: The raw refresh token to hand back to the client.
+    """
+    raw_token = create_refresh_token()
+    db_token = RefreshToken(
+        user_id=user_id,
+        token_hash=hash_refresh_token(raw_token),
+        expires_at=get_refresh_token_expiration_time(),
+        revoked=False,
+    )
+    db.add(db_token)
+    db.commit()
+    return raw_token
+
+
 @router.post("/login", response_model=Token)
 @limiter.limit(settings.AUTH_RATE_LIMIT_LOGIN)
 def login(
@@ -237,14 +270,14 @@ def login(
     db: Annotated[Session, Depends(get_db)]
 ):
     """
-    Authenticate user and return JWT access token.
+    Authenticate user and return a JWT access token plus a refresh token.
     
     Args:
         user_credentials: UserLogin schema with email and password
         db: Database session dependency
         
     Returns:
-        Token schema with access_token and token_type
+        Token schema with access_token, refresh_token, and token_type
         
     Raises:
         HTTPException: If authentication fails (401 Unauthorized)
@@ -263,9 +296,12 @@ def login(
         data={"sub": str(user.id), "role": user.role},
         expires_delta=access_token_expires
     )
-    
+
+    refresh_token = _issue_refresh_token(db, user.id)
+
     return Token(
         access_token=access_token,
+        refresh_token=refresh_token,
         token_type="bearer"
     )
 
@@ -372,6 +408,173 @@ def get_current_user_info(
         email=current_user.email,
         role=current_user.role
     )
+
+
+def _get_valid_refresh_token_row(db: Session, raw_token: str) -> RefreshToken:
+    """
+    Look up and validate a refresh token by its raw value.
+
+    Looks up by HMAC hash (deterministic, so a direct equality query
+    works), then checks revocation and expiry.
+
+    Args:
+        db: Database session
+        raw_token: The raw refresh token string supplied by the client
+
+    Returns:
+        The matching, still-valid RefreshToken row.
+
+    Raises:
+        HTTPException: 401 if the token is unknown, revoked, or expired.
+    """
+    invalid_exception = HTTPException(
+        status_code=status.HTTP_401_UNAUTHORIZED,
+        detail=INVALID_REFRESH_TOKEN,
+        headers={"WWW-Authenticate": "Bearer"},
+    )
+
+    token_hash = hash_refresh_token(raw_token)
+    token_row = db.query(RefreshToken).filter(RefreshToken.token_hash == token_hash).first()
+
+    if not token_row:
+        raise invalid_exception
+
+    # Defence in depth: re-verify in constant time even though the lookup
+    # already matched by hash equality (guards against any future change
+    # to the lookup that might compare non-hash fields).
+    if not verify_refresh_token_hash(raw_token, token_row.token_hash):
+        raise invalid_exception
+
+    if token_row.revoked:
+        raise invalid_exception
+
+    # SQLite doesn't actually preserve timezone-awareness for
+    # DateTime(timezone=True) columns on read (unlike Postgres), so
+    # expires_at may come back naive depending on the configured
+    # DATABASE_URL. Normalize before comparing to avoid a "can't compare
+    # naive and aware datetimes" TypeError surfacing as a 500.
+    expires_at = token_row.expires_at
+    if expires_at.tzinfo is None:
+        expires_at = expires_at.replace(tzinfo=timezone.utc)
+
+    if expires_at < datetime.now(timezone.utc):
+        raise invalid_exception
+
+    return token_row
+
+
+@router.post("/refresh", response_model=Token)
+def refresh_access_token(
+    request_body: RefreshTokenRequest,
+    db: Annotated[Session, Depends(get_db)],
+):
+    """
+    Exchange a valid refresh token for a new access token + refresh token.
+
+    Implements rotation-on-refresh: the supplied refresh token is revoked
+    as part of this call and a brand new one is issued, so a leaked
+    refresh token can only be replayed once before detection (a second
+    use of the same old token will fail with 401, since it's now
+    revoked) — this is the standard OAuth2 refresh token rotation pattern.
+
+    Args:
+        request_body: RefreshTokenRequest with the current refresh_token
+        db: Database session dependency
+
+    Returns:
+        Token schema with a new access_token and refresh_token
+
+    Raises:
+        HTTPException: 401 if the refresh token is invalid, revoked, or expired
+    """
+    try:
+        token_row = _get_valid_refresh_token_row(db, request_body.refresh_token)
+
+        user = db.query(User).filter(User.id == token_row.user_id).first()
+        if not user or not user.is_active:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail=INVALID_REFRESH_TOKEN,
+                headers={"WWW-Authenticate": "Bearer"},
+            )
+
+        # Rotate: revoke the old token, issue a brand new one.
+        token_row.revoked = True
+        db.commit()
+
+        access_token_expires = timedelta(minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES)
+        access_token = create_access_token(
+            data={"sub": str(user.id), "role": user.role},
+            expires_delta=access_token_expires,
+        )
+        new_refresh_token = _issue_refresh_token(db, user.id)
+
+        return Token(
+            access_token=access_token,
+            refresh_token=new_refresh_token,
+            token_type="bearer",
+        )
+
+    except HTTPException:
+        raise
+    except SQLAlchemyError:
+        logger.exception("Database error in refresh_access_token")
+        db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=AUTH_SERVICE_UNAVAILABLE,
+        )
+    except Exception:
+        logger.exception("Unexpected error in refresh_access_token")
+        db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=AUTH_SERVICE_UNAVAILABLE,
+        )
+
+
+@router.post("/logout", response_model=LogoutResponse)
+def logout(
+    request_body: RefreshTokenRequest,
+    db: Annotated[Session, Depends(get_db)],
+):
+    """
+    Revoke a refresh token, ending that session.
+
+    The access token itself stays valid until it naturally expires (it's
+    a stateless JWT and can't be revoked early without a blocklist), but
+    the client can no longer use this refresh token to mint new ones —
+    the practical effect is the same as "logging out" once the short-lived
+    access token expires.
+
+    Idempotent and intentionally tolerant: an unknown or already-revoked
+    refresh token still returns success, since from the caller's
+    perspective the desired end state ("I'm logged out") is already true.
+
+    Args:
+        request_body: RefreshTokenRequest with the refresh_token to revoke
+        db: Database session dependency
+
+    Returns:
+        LogoutResponse confirming the session was ended
+    """
+    try:
+        token_hash = hash_refresh_token(request_body.refresh_token)
+        token_row = db.query(RefreshToken).filter(RefreshToken.token_hash == token_hash).first()
+
+        if token_row and not token_row.revoked:
+            token_row.revoked = True
+            db.commit()
+
+        return LogoutResponse(message="Logged out successfully")
+
+    except SQLAlchemyError:
+        logger.exception("Database error in logout")
+        db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=AUTH_SERVICE_UNAVAILABLE,
+        )
 
 
 @router.post("/forgot-password", response_model=ForgotPasswordResponse)
