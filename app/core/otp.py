@@ -17,6 +17,7 @@ DO NOT:
 
 """
 
+import hashlib
 import logging
 import os
 import secrets
@@ -39,6 +40,38 @@ def generate_otp() -> str:
         6-digit numeric OTP string
     """
     return ''.join(secrets.choice(string.digits) for _ in range(6))
+
+
+def hash_otp(otp: str) -> str:
+    """
+    Return a SHA-256 hex digest of the supplied OTP.
+
+    The hash is stored in the database instead of the raw token so that
+    a read-access DB compromise does not expose pending reset codes.
+
+    Args:
+        otp: Plaintext OTP string (e.g. '482910')
+
+    Returns:
+        64-character lowercase hex string (SHA-256 digest)
+    """
+    return hashlib.sha256(otp.encode()).hexdigest()
+
+
+def verify_otp_hash(candidate_otp: str, stored_hash: str) -> bool:
+    """
+    Compare a candidate OTP against a stored SHA-256 hash in constant time.
+
+    Uses ``secrets.compare_digest`` to prevent timing-oracle attacks.
+
+    Args:
+        candidate_otp: The plaintext OTP supplied by the user.
+        stored_hash:   The SHA-256 hex digest persisted in the database.
+
+    Returns:
+        True if the candidate matches the stored hash, False otherwise.
+    """
+    return secrets.compare_digest(hash_otp(candidate_otp), stored_hash)
 
 
 def send_otp_email(email: str, otp: str) -> bool:

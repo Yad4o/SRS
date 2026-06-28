@@ -51,7 +51,7 @@ from app.constants import (
 from app.core.security import verify_password, create_access_token, hash_password, decode_token, check_password_truncation
 from app.core.config import settings, ALLOWED_ROLES
 from app.core.limiter import limiter
-from app.core.otp import generate_otp, send_otp_email, log_otp_for_dev, is_otp_expired, get_otp_expiration_time
+from app.core.otp import generate_otp, hash_otp, verify_otp_hash, send_otp_email, log_otp_for_dev, is_otp_expired, get_otp_expiration_time
 from app.db.session import get_db
 from app.models.user import User
 from app.schemas.user import (
@@ -420,11 +420,11 @@ def forgot_password(
             )
             return _safe_response
 
-        # Generate and persist OTP
+        # Generate and persist OTP — store the SHA-256 hash, not the raw token.
         otp = generate_otp()
         otp_expires_at = get_otp_expiration_time(10)  # 10 minutes
 
-        user.reset_otp = otp
+        user.reset_otp = hash_otp(otp)   # never persist plaintext OTP
         user.reset_otp_expires_at = otp_expires_at
         user.reset_otp_attempts = 0
 
@@ -494,8 +494,8 @@ def _verify_user_otp(db: Session, email: str, otp: str) -> User:
             detail=MAX_OTP_ATTEMPTS
         )
     
-    # Verify OTP
-    if not secrets.compare_digest(str(user.reset_otp), str(otp)):
+    # Verify OTP — compare against the stored SHA-256 hash in constant time
+    if not verify_otp_hash(str(otp), str(user.reset_otp)):
         # Increment attempts
         user.reset_otp_attempts += 1
         db.commit()
