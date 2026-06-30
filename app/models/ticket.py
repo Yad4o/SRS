@@ -68,6 +68,24 @@ class Ticket(Base):
         doc="Sub-category of intent (e.g. password_reset)",
     )
 
+    # Issue #2 — sentiment analysis existed in app/services/ai_service.py
+    # but was never wired into the actual ticket pipeline. These columns
+    # persist the result so it's visible on the ticket and usable by the
+    # decision override in run_ticket_automation: a negative-sentiment
+    # ticket is escalated even when intent-classification confidence alone
+    # would have auto-resolved it.
+    sentiment = Column(
+        String,
+        nullable=True,
+        doc="Sentiment of the ticket message: negative | neutral | positive",
+    )
+
+    sentiment_confidence = Column(
+        Float,
+        nullable=True,
+        doc="Confidence score (0.0-1.0) for the sentiment classification",
+    )
+
     confidence = Column(
         Float,
         nullable=True,

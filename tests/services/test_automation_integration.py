@@ -240,16 +240,23 @@ class TestEdgeCases:
         """Test behavior when confidence is exactly at threshold (0.75)."""
         # Mock classifier to return exactly threshold confidence
         mock_classify.return_value = {"intent": "login_issue", "confidence": 0.75}
-        
+
         # Create ticket
         response = client.post("/tickets/", json={"message": "Login issue at threshold"})
-        
+
         assert response.status_code == 201
         ticket_data = response.json()
-        
+
         # Should auto-resolve at threshold
         assert ticket_data["status"] == "auto_resolved"
-        assert ticket_data["confidence"] == 0.95  # Actual classifier confidence
+        # NOTE: run_ticket_automation now calls classify_intent_ai(), which falls
+        # back to classify_intent() by name from within app/services/classifier.py
+        # (since no OPENAI_API_KEY is configured in tests) — so this mock, patched
+        # at the source module, is now actually exercised (previously it patched a
+        # name ticket_service.py had already bound via a direct `from ... import`,
+        # so it had no effect and this assertion was hardcoded to the real
+        # classifier's unmocked output instead). 0.75 is the mocked value.
+        assert ticket_data["confidence"] == 0.75
 
     @patch('app.services.classifier.classify_intent')
     def test_invalid_confidence_values(self, mock_classify, client, integration_db_session):
@@ -507,26 +514,41 @@ class TestFeedbackIntegration:
 
     @patch('app.services.classifier.classify_intent')
     def test_feedback_on_escalated_ticket(self, mock_classify, client, integration_db_session):
-        """Test providing feedback on escalated ticket."""
-        # Mock classifier for escalation
+        """Feedback is only accepted for resolved tickets, not escalated ones.
+
+        NOTE: this test previously asserted the opposite (that feedback
+        "should work for escalated tickets too") and got a 201 — but only
+        because the classify_intent mock wasn't actually being exercised
+        (see test_confidence_exactly_at_threshold for why), so the ticket
+        ended up auto_resolved by the real, unmocked classifier rather than
+        escalated as the test intended. Now that classify_intent_ai() falls
+        back to classify_intent() by in-module name, this mock is properly
+        applied, the ticket is genuinely escalated, and
+        feedback_service.create_feedback_record() correctly rejects feedback
+        for tickets that aren't AUTO_RESOLVED or CLOSED (app/services/
+        feedback_service.py) — that 400 is the actual intended business
+        rule, not a bug.
+        """
+        # Mock classifier to force escalation
         mock_classify.return_value = {"intent": "unknown", "confidence": 0.3}
-        
+
         # Create escalated ticket
         response = client.post("/tickets/", json={"message": "Unknown issue for feedback"})
         assert response.status_code == 201
         ticket_data = response.json()
+        assert ticket_data["status"] == "escalated"
         ticket_id = ticket_data["id"]
-        
-        # Add feedback (should work for escalated tickets too)
+
+        # Feedback on a still-escalated (not yet resolved) ticket must be rejected
         feedback_data = {
             "ticket_id": ticket_id,
             "rating": 2,
             "resolved": False,
             "comment": "Still waiting for resolution"
         }
-        
+
         response = client.post("/feedback/", json=feedback_data)
-        assert response.status_code == 201
+        assert response.status_code == 400
 
 
 class TestSystemReliability:
@@ -600,4 +622,7 @@ class TestSystemReliability:
         # All should have same classification
         for ticket_data in responses:
             assert ticket_data["intent"] == "login_issue"
-            assert ticket_data["confidence"] == 0.95  # Actual classifier confidence
+            # See test_confidence_exactly_at_threshold for why this mock is now
+            # actually applied (classify_intent_ai falls back to classify_intent
+            # by in-module name, so a patch on the source module takes effect).
+            assert ticket_data["confidence"] == 0.85
