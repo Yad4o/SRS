@@ -23,7 +23,8 @@ from sqlalchemy.orm import Session
 from app.constants import TicketStatus
 from app.core.config import settings
 from app.models.ticket import Ticket
-from app.services.classifier import classify_intent
+from app.services.ai_service import SentimentAnalysisService
+from app.services.classifier import classify_intent_ai
 from app.services.decision_engine import decide_resolution
 from app.services.response_generator import generate_response
 from app.services.similarity_search import (
@@ -34,6 +35,10 @@ from app.services.similarity_search import (
 )
 
 logger = logging.getLogger(__name__)
+
+# Stateless wrapper, safe to share across requests — see
+# app/services/ai_service.py:SentimentAnalysisService.
+_sentiment_service = SentimentAnalysisService()
 
 
 def extract_user_id_from_token(token: str | None) -> int | None:
@@ -91,9 +96,11 @@ def run_ticket_automation(ticket: Ticket, db: Session) -> Ticket:
     Run the AI automation pipeline for a given ticket.
 
     Steps:
-        1. Classify intent via classifier service
+        1. Classify intent via classifier service (LLM-first, rule-based fallback)
+        1b. Analyze sentiment (LLM-first, keyword-heuristic fallback)
         2. Check similarity cache; fall back to DB query + similarity search
-        3. Make auto-resolve vs. escalate decision
+        3. Make auto-resolve vs. escalate decision, with a safety override:
+           negative sentiment forces escalation even at high intent confidence
         4. Generate a response for auto-resolved tickets
         5. Persist results and return the updated ticket
 
@@ -105,7 +112,10 @@ def run_ticket_automation(ticket: Ticket, db: Session) -> Ticket:
         Updated Ticket instance with intent, confidence, status, and response set.
     """
     # --- Step 1: Classify intent ---
-    classification = classify_intent(ticket.message)
+    # classify_intent_ai tries the configured LLM first and transparently
+    # falls back to the deterministic rule-based classifier on any
+    # failure or missing config (Issue #1 — classifier was rule-based only).
+    classification = classify_intent_ai(ticket.message)
     intent = classification["intent"]
     confidence = classification["confidence"]
     sub_intent = classification.get("sub_intent")
@@ -113,6 +123,31 @@ def run_ticket_automation(ticket: Ticket, db: Session) -> Ticket:
     ticket.intent = intent
     ticket.confidence = confidence
     ticket.sub_intent = sub_intent
+
+    # --- Step 1b: Sentiment analysis ---
+    # Issue #2 — sentiment analysis existed in ai_service.py but was never
+    # called from the actual pipeline. analyze_sentiment() is already
+    # wrapped in BaseAIService.safe_execute(), so it cannot raise; the
+    # try/except here is an extra safety net around our own extraction
+    # logic, consistent with "AI pipeline failure must never block ticket
+    # creation" elsewhere in this function.
+    sentiment = None
+    sentiment_confidence = None
+    sentiment_escalate = False
+    try:
+        sentiment_outcome = _sentiment_service.analyze_sentiment(ticket.message)
+        sentiment_data = sentiment_outcome.get("data") or {}
+        sentiment = sentiment_data.get("sentiment")
+        sentiment_confidence = sentiment_data.get("confidence")
+        sentiment_escalate = bool(sentiment_data.get("escalate", False))
+    except Exception:
+        logger.warning(
+            f"Sentiment analysis failed for ticket {ticket.id}; continuing without it",
+            exc_info=True,
+        )
+
+    ticket.sentiment = sentiment
+    ticket.sentiment_confidence = sentiment_confidence
 
     # --- Step 2: Similarity search (cache-first) ---
     cache = _get_cache_client()
@@ -144,6 +179,19 @@ def run_ticket_automation(ticket: Ticket, db: Session) -> Ticket:
 
     # --- Step 3: Resolution decision ---
     decision = decide_resolution(confidence)
+
+    # Safety override: an upset customer shouldn't get a robotic
+    # auto-reply just because the intent classifier was confident about
+    # *what* they're asking — route to a human instead. This mirrors the
+    # codebase's existing "any uncertainty -> escalate" philosophy
+    # (see app/services/decision_engine.py), applied to sentiment instead
+    # of intent confidence.
+    if decision == "AUTO_RESOLVE" and sentiment_escalate:
+        decision = "ESCALATE"
+        logger.info(
+            f"Ticket {ticket.id} overridden to escalate due to negative sentiment "
+            f"(sentiment={sentiment}, sentiment_confidence={sentiment_confidence})"
+        )
 
     # --- Step 4: Generate response or escalate ---
     if decision == "AUTO_RESOLVE":

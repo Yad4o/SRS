@@ -131,21 +131,21 @@ services:
 
   # ---------------------------------------------------------------------------
   # Nginx reverse proxy + TLS termination
-  # Enable this block once nginx.conf and SSL certificates are in place.
-  # See docs/deployment/NGINX.md for setup instructions.
+  # See docs/deployment/NGINX.md for cert setup (self-signed for local dev
+  # via ./scripts/generate-dev-cert.sh, or Let's Encrypt/Certbot for prod).
   # ---------------------------------------------------------------------------
-  # nginx:
-  #   image: nginx:1.25-alpine
-  #   ports:
-  #     - "80:80"
-  #     - "443:443"
-  #   volumes:
-  #     - ./nginx.conf:/etc/nginx/nginx.conf:ro
-  #     - ./ssl:/etc/nginx/ssl:ro
-  #   depends_on:
-  #     api:
-  #       condition: service_healthy
-  #   restart: unless-stopped
+  nginx:
+    image: nginx:1.27-alpine
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./ssl:/etc/nginx/ssl:ro
+    depends_on:
+      api:
+        condition: service_healthy
+    restart: unless-stopped
 
 volumes:
   postgres_data:

@@ -57,6 +57,13 @@ class Settings(BaseSettings):
     ALGORITHM: str = "HS256"
     CORS_ORIGINS: list[str] = []
     DEFAULT_USER_ROLE: str = "user"
+
+    # Refresh tokens are long-lived, opaque, random strings stored hashed
+    # in the DB (see app/models/refresh_token.py). They let a client get a
+    # new short-lived access token without re-entering credentials, and
+    # can be individually revoked (e.g. on logout) — unlike the stateless
+    # JWT access token, which cannot be revoked before it expires.
+    REFRESH_TOKEN_EXPIRE_DAYS: int = 30
     
     @field_validator("DEFAULT_USER_ROLE")
     @classmethod

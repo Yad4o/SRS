@@ -31,3 +31,10 @@ tmp_*.txt
 tmp_*.py
 run_tests.py
 act.ps1
+
+# TLS certificates / private keys — never commit real cert material.
+# See ssl/README.md and scripts/generate-dev-cert.sh.
+ssl/*.pem
+ssl/*.key
+ssl/*.crt
+!ssl/README.md

@@ -259,15 +259,21 @@ class TestToken:
         assert isinstance(token.access_token, str)
 
     def test_token_has_exactly_expected_fields(self):
-        """Token should only expose access_token and token_type."""
+        """Token should expose access_token, refresh_token, and token_type."""
         fields = set(Token.model_fields.keys())
-        assert fields == {"access_token", "token_type"}
+        assert fields == {"access_token", "refresh_token", "token_type"}
 
     def test_token_serialises_to_dict(self):
         """model_dump() should return the correct dict shape."""
         token = Token(access_token="abc.def.ghi")
         data = token.model_dump()
-        assert data == {"access_token": "abc.def.ghi", "token_type": "bearer"}
+        assert data == {"access_token": "abc.def.ghi", "refresh_token": None, "token_type": "bearer"}
+
+    def test_token_serialises_to_dict_with_refresh_token(self):
+        """model_dump() should include a supplied refresh_token."""
+        token = Token(access_token="abc.def.ghi", refresh_token="rt_abc123")
+        data = token.model_dump()
+        assert data == {"access_token": "abc.def.ghi", "refresh_token": "rt_abc123", "token_type": "bearer"}
 
     def test_token_with_real_jwt_string(self):
         """Token should accept a real 3-part JWT string without issues."""

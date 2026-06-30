@@ -67,6 +67,8 @@ class TicketResponse(BaseModel):
     intent: str | None = None
     sub_intent: str | None = None
     confidence: float | None = None
+    sentiment: str | None = None
+    sentiment_confidence: float | None = None
     status: str
     response: str | None = None
     response_source: str | None = None

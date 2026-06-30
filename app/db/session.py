@@ -125,7 +125,7 @@ def init_db() -> None:
     Safe to call multiple times: creates only missing tables.
     """
     # Import models so they register with Base.metadata (side-effect imports)
-    from app.models import feedback, ticket, user
+    from app.models import feedback, refresh_token, ticket, user
 
     Base.metadata.create_all(bind=engine)
 
