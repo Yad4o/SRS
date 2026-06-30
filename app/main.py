@@ -91,7 +91,9 @@ def create_app() -> FastAPI:
     # --------------------------------------------------
 
     # CORS Middleware
-    # Production configuration for Vercel frontend
+    # allow_origin_regex covers every Vercel preview + production URL for this
+    # project (e.g. srs-frontend-rho.vercel.app, srs-frontend-<hash>-<team>.vercel.app),
+    # since Vercel mints a new unique URL for every deployment.
     app.add_middleware(
         CORSMiddleware,
         allow_origins=settings.CORS_ORIGINS if settings.CORS_ORIGINS else [
@@ -99,6 +101,7 @@ def create_app() -> FastAPI:
             "http://localhost:3000",  # Local development
             "http://localhost:5173",  # Vite dev server
         ],
+        allow_origin_regex=r"https://srs-frontend.*\.vercel\.app",
         allow_credentials=True,
         allow_methods=["*"],
         allow_headers=["*"],
