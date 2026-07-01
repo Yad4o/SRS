@@ -52,13 +52,29 @@ class MetricsResponse(BaseModel):
 
 
 class AdminTicketItem(BaseModel):
-    """Single ticket entry in the admin ticket list."""
+    """
+    Single ticket entry in the admin ticket list.
+
+    Fields kept in sync with TicketResponse so that admin pages and
+    shared components (TicketTable, StatusBadge, etc.) work correctly.
+    Previously, missing fields caused the Escalations page to always show
+    an empty list: assigned_agent_id was never serialized, so the frontend
+    filter (t.assigned_agent_id === null) always returned an empty array
+    even when unassigned escalated tickets existed in the database.
+    """
     id: int
     message: str
     status: str
     intent: str | None = None
+    sub_intent: str | None = None
     confidence: float | None = None
+    sentiment: str | None = None
+    sentiment_confidence: float | None = None
     response: str | None = None
+    response_source: str | None = None
+    quality_score: float | None = None
+    user_id: int | None = None
+    assigned_agent_id: int | None = None
     created_at: str | None = None
 
 
@@ -69,6 +85,18 @@ class PaginationMeta(BaseModel):
     total_pages: int
     has_next: bool
     has_prev: bool
+
+
+class AdminAssignRequest(BaseModel):
+    """Request body for POST /admin/tickets/{id}/assign."""
+    agent_id: int
+
+
+class AgentListItem(BaseModel):
+    """Single agent entry returned by GET /admin/agents."""
+    id: int
+    email: str
+    role: str
 
 
 class FiltersMeta(BaseModel):

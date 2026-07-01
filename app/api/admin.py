@@ -19,7 +19,7 @@ DO NOT:
 
 from fastapi import APIRouter, Depends, HTTPException, status, Query
 from sqlalchemy.orm import Session
-from sqlalchemy import func, Integer
+from sqlalchemy import func, Integer, update
 from typing import Annotated, Any
 import logging
 
@@ -29,7 +29,9 @@ from app.models.feedback import Feedback
 from app.models.user import User
 from app.api.auth import get_current_user
 from app.constants import UserRole, TicketStatus
-from app.schemas.admin import MetricsResponse, AdminTicketListResponse, AdminTicketItem, FiltersMeta, PaginationMeta
+from app.schemas.admin import MetricsResponse, AdminTicketListResponse, AdminTicketItem, AgentListItem, AdminAssignRequest, FiltersMeta, PaginationMeta
+from app.schemas.ticket import TicketResponse
+from app.api.dependencies import require_agent_or_admin
 from app.core.exceptions import (
     AuthorizationError,
     ValidationError,
@@ -44,7 +46,8 @@ ALLOWED_TICKET_STATUSES = {
     TicketStatus.OPEN.value,
     TicketStatus.AUTO_RESOLVED.value,
     TicketStatus.ESCALATED.value,
-    TicketStatus.CLOSED.value
+    TicketStatus.IN_PROGRESS.value,
+    TicketStatus.CLOSED.value,
 }
 
 router = APIRouter(prefix="/admin", tags=["Admin"])
@@ -232,19 +235,30 @@ def list_all_tickets(
         offset = (page - 1) * limit
         tickets = query.order_by(Ticket.created_at.desc()).offset(offset).limit(limit).all()
         
-        # Convert to response format
-        ticket_list = []
-        for ticket in tickets:
-            ticket_data = {
-                "id": ticket.id,
-                "message": ticket.message,
-                "status": ticket.status,
-                "intent": ticket.intent,
-                "confidence": ticket.confidence,
-                "response": ticket.response,
-                "created_at": ticket.created_at.isoformat() if ticket.created_at else None
-            }
-            ticket_list.append(ticket_data)
+        # Convert to response format.
+        # Serialize via AdminTicketItem so that all fields declared in the
+        # schema are always populated — prevents silent None/undefined
+        # mismatches on the frontend (e.g. assigned_agent_id was previously
+        # missing, causing the Escalations page filter to always return empty).
+        ticket_list = [
+            AdminTicketItem(
+                id=ticket.id,
+                message=ticket.message,
+                status=ticket.status,
+                intent=ticket.intent,
+                sub_intent=ticket.sub_intent,
+                confidence=ticket.confidence,
+                sentiment=ticket.sentiment,
+                sentiment_confidence=ticket.sentiment_confidence,
+                response=ticket.response,
+                response_source=ticket.response_source,
+                quality_score=ticket.quality_score,
+                user_id=ticket.user_id,
+                assigned_agent_id=ticket.assigned_agent_id,
+                created_at=ticket.created_at.isoformat() if ticket.created_at else None,
+            ).model_dump()
+            for ticket in tickets
+        ]
         
         # Calculate pagination info
         total_pages = (total_count + limit - 1) // limit
@@ -273,3 +287,128 @@ def list_all_tickets(
         logger.exception("Failed to retrieve admin tickets list")
         raise InternalError("Failed to retrieve tickets") from e
 
+
+
+@router.get("/agents", response_model=list[AgentListItem])
+def list_agents(
+    current_user: Annotated[User, Depends(require_admin)],
+    db: Session = Depends(get_db),
+) -> list[AgentListItem]:
+    """
+    List all users with the 'agent' role.
+
+    Used by the AssignAgentModal in AdminEscalations to populate the
+    agent dropdown before the admin assigns a ticket.
+
+    Args:
+        current_user: Admin user (from require_admin dependency)
+        db: Database session dependency
+
+    Returns:
+        list[AgentListItem]: All agents (id, email, role)
+
+    Raises:
+        AuthorizationError: 403 if not admin
+    """
+    try:
+        agents = (
+            db.query(User)
+            .filter(User.role == UserRole.AGENT.value, User.is_active.is_(True))
+            .order_by(User.email)
+            .all()
+        )
+        logger.info(f"Admin {current_user.id} listed agents: count={len(agents)}")
+        return [AgentListItem(id=a.id, email=a.email, role=a.role) for a in agents]
+    except Exception:
+        logger.exception("Failed to list agents")
+        raise InternalError("Failed to retrieve agents")
+
+
+@router.post("/tickets/{ticket_id}/assign", response_model=TicketResponse)
+def admin_assign_ticket(
+    ticket_id: int,
+    body: AdminAssignRequest,
+    current_user: Annotated[User, Depends(require_admin)] = None,
+    db: Session = Depends(get_db),
+) -> TicketResponse:
+    """
+    Admin-assign a specific agent to an escalated ticket.
+
+    Unlike the agent self-assign endpoint (POST /tickets/{id}/assign),
+    this endpoint allows an admin to assign *any* available agent to the
+    ticket.  The selected agent_id is supplied in the request body.
+
+    The atomic UPDATE is the sole concurrency gate.
+
+    Args:
+        ticket_id: ID of the escalated ticket to assign
+        agent_id: ID of the agent to assign (request body)
+        current_user: Admin user (from require_admin dependency)
+        db: Database session dependency
+
+    Returns:
+        TicketResponse: The updated ticket
+
+    Raises:
+        HTTPException 400 – agent_id not found or not an agent
+        HTTPException 404 – ticket not found
+        HTTPException 409 – ticket already assigned or wrong status
+    """
+    try:
+        # Validate the target agent exists and has agent role
+        agent_id = body.agent_id
+        agent = db.query(User).filter(
+            User.id == agent_id,
+            User.role == UserRole.AGENT.value,
+            User.is_active.is_(True),
+        ).first()
+
+        if not agent:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"No agent found with id {agent_id}",
+            )
+
+        # Atomic UPDATE: only succeeds when ticket exists, is escalated,
+        # and has no assigned agent yet.
+        result = db.execute(
+            update(Ticket)
+            .where(
+                Ticket.id == ticket_id,
+                Ticket.assigned_agent_id.is_(None),
+                Ticket.status == TicketStatus.ESCALATED.value,
+            )
+            .values(assigned_agent_id=agent_id)
+        )
+
+        if result.rowcount == 0:
+            ticket = db.query(Ticket).filter(Ticket.id == ticket_id).first()
+
+            if not ticket:
+                raise HTTPException(
+                    status_code=status.HTTP_404_NOT_FOUND,
+                    detail=f"Ticket {ticket_id} not found",
+                )
+            if ticket.assigned_agent_id is not None:
+                raise HTTPException(
+                    status_code=status.HTTP_409_CONFLICT,
+                    detail=f"Ticket already assigned to agent {ticket.assigned_agent_id}",
+                )
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail=f"Ticket status is '{ticket.status}', cannot assign",
+            )
+
+        db.commit()
+        ticket = db.query(Ticket).filter(Ticket.id == ticket_id).first()
+        logger.info(
+            f"Admin {current_user.id} assigned ticket {ticket_id} to agent {agent_id}"
+        )
+        return TicketResponse.model_validate(ticket)
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        db.rollback()
+        logger.exception(f"Failed to admin-assign ticket {ticket_id}")
+        raise InternalError("Failed to assign ticket") from e
