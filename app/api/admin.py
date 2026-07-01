@@ -313,7 +313,7 @@ def list_agents(
     try:
         agents = (
             db.query(User)
-            .filter(User.role == UserRole.AGENT.value)
+            .filter(User.role == UserRole.AGENT.value, User.is_active.is_(True))
             .order_by(User.email)
             .all()
         )
@@ -360,6 +360,7 @@ def admin_assign_ticket(
         agent = db.query(User).filter(
             User.id == agent_id,
             User.role == UserRole.AGENT.value,
+            User.is_active.is_(True),
         ).first()
 
         if not agent:
