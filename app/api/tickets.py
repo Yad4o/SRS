@@ -240,6 +240,81 @@ def tickets_health():
     }
 
 
+@router.get("/my-assignments", response_model=TicketList)
+def get_my_assignments(
+    ticket_status: str | None = Query(
+        None,
+        description="Filter by status: escalated (unacknowledged) or in_progress (active)",
+        alias="status",
+    ),
+    limit: int = Query(50, ge=1, le=100),
+    offset: int = Query(0, ge=0),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_agent_or_admin),
+) -> TicketList:
+    """
+    List tickets assigned to the current agent.
+
+    Returns tickets where ``assigned_agent_id`` matches the authenticated
+    caller.  Agents see their own queue; admins calling this endpoint see
+    tickets assigned specifically to themselves (not all agents).
+
+    Status filter semantics
+    -----------------------
+    - ``escalated``   — assigned but not yet accepted (agent has not clicked Accept)
+    - ``in_progress`` — agent has accepted and is actively working the ticket
+    - ``closed``      — tickets the agent resolved / closed
+    - omitted         — all statuses (escalated + in_progress + closed)
+
+    Args:
+        ticket_status: Optional status filter
+        limit: Page size (1–100)
+        offset: Pagination offset
+        current_user: Authenticated agent/admin user
+
+    Returns:
+        TicketList: Tickets assigned to the current user
+    """
+    try:
+        allowed = {
+            TicketStatus.ESCALATED.value,
+            TicketStatus.IN_PROGRESS.value,
+            TicketStatus.CLOSED.value,
+        }
+        if ticket_status and ticket_status not in allowed:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Invalid status '{ticket_status}'. Allowed: {', '.join(sorted(allowed))}",
+            )
+
+        query = (
+            db.query(Ticket)
+            .filter(Ticket.assigned_agent_id == current_user.id)
+        )
+
+        if ticket_status:
+            query = query.filter(Ticket.status == ticket_status)
+
+        total = query.count()
+        tickets = query.order_by(Ticket.created_at.desc()).limit(limit).offset(offset).all()
+        ticket_responses = [TicketResponse.model_validate(t) for t in tickets]
+
+        logger.info(
+            f"Agent {current_user.id} fetched my-assignments: "
+            f"count={len(ticket_responses)}, filter={ticket_status}"
+        )
+        return TicketList(tickets=ticket_responses, total=total)
+
+    except HTTPException:
+        raise
+    except Exception:
+        logger.exception(f"Failed to retrieve assignments for user {current_user.id}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Internal server error while retrieving assignments",
+        )
+
+
 @router.get("/{ticket_id}", response_model=TicketResponse)
 def get_ticket(
     ticket_id: int,
@@ -540,3 +615,83 @@ def create_ticket_feedback(
 
 
 
+
+
+@router.post("/{ticket_id}/accept", response_model=TicketResponse)
+def accept_ticket(
+    ticket_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_agent_or_admin)
+) -> TicketResponse:
+    """
+    Accept an escalated ticket that has been assigned to the current agent.
+
+    Transitions the ticket from ``escalated`` → ``in_progress``, signalling
+    that the assigned agent has acknowledged the ticket and is actively
+    working it.  Only the assigned agent (or an admin) may accept.
+
+    The atomic UPDATE is the sole concurrency gate — there is no pre-fetch race.
+
+    Args:
+        ticket_id: ID of the ticket to accept
+        db: Database session dependency
+        current_user: Authenticated agent/admin user
+
+    Returns:
+        TicketResponse: The updated ticket with status=in_progress
+
+    Raises:
+        HTTPException 403 – caller is not the assigned agent
+        HTTPException 404 – ticket not found
+        HTTPException 409 – ticket not in an acceptable state
+    """
+    try:
+        result = db.execute(
+            update(Ticket)
+            .where(
+                Ticket.id == ticket_id,
+                Ticket.assigned_agent_id == current_user.id,
+                Ticket.status == TicketStatus.ESCALATED.value,
+            )
+            .values(status=TicketStatus.IN_PROGRESS.value)
+        )
+
+        if result.rowcount == 0:
+            ticket = db.query(Ticket).filter(Ticket.id == ticket_id).first()
+
+            if not ticket:
+                raise HTTPException(
+                    status_code=status.HTTP_404_NOT_FOUND,
+                    detail=f"Ticket {ticket_id} not found",
+                )
+
+            # Idempotent: already accepted by this agent
+            if ticket.assigned_agent_id == current_user.id and ticket.status == TicketStatus.IN_PROGRESS.value:
+                logger.info(f"Ticket {ticket_id} already in_progress for user {current_user.id} (idempotent)")
+                return TicketResponse.model_validate(ticket)
+
+            if ticket.assigned_agent_id != current_user.id:
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    detail="Only the assigned agent may accept this ticket",
+                )
+
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail=f"Ticket status is '{ticket.status}', cannot accept",
+            )
+
+        db.commit()
+        ticket = db.query(Ticket).filter(Ticket.id == ticket_id).first()
+        logger.info(f"Ticket {ticket_id} accepted (in_progress) by user {current_user.id}")
+        return TicketResponse.model_validate(ticket)
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        db.rollback()
+        logger.exception(f"Failed to accept ticket {ticket_id}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Internal server error occurred while accepting ticket",
+        ) from e

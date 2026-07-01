@@ -96,7 +96,7 @@ class Ticket(Base):
         String,
         default=TicketStatus.OPEN.value,
         nullable=False,
-        doc="Ticket status: open | auto_resolved | escalated | closed",
+        doc="Ticket status: open | auto_resolved | escalated | in_progress | closed",
     )
 
     is_archived = Column(

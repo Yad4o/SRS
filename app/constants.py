@@ -20,6 +20,7 @@ class TicketStatus(str, Enum):
     OPEN = "open"
     AUTO_RESOLVED = "auto_resolved"
     ESCALATED = "escalated"
+    IN_PROGRESS = "in_progress"   # Agent has accepted the ticket and is actively working it
     CLOSED = "closed"
 
 # User roles
