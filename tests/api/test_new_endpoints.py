@@ -494,3 +494,228 @@ class TestInProgressStatus(BaseTestClass):
 
         ids = {t_["id"] for t_ in resp.json()["tickets"]}
         assert t.id in ids
+
+
+# ---------------------------------------------------------------------------
+# GET /admin/users
+# ---------------------------------------------------------------------------
+
+class TestAdminListUsers(BaseTestClass):
+    """GET /admin/users — returns all users with optional filters."""
+
+    def test_returns_all_users(self):
+        admin = _make_user("admin_list@test.com", "admin")
+        u1 = _make_user("user_list1@test.com", "user")
+        u2 = _make_user("agent_list1@test.com", "agent")
+
+        token = AuthHelper.create_admin_token(str(admin.id))
+        resp = client.get("/admin/users", headers={"Authorization": token})
+
+        assert resp.status_code == 200
+        data = resp.json()
+        assert "users" in data
+        assert "total" in data
+        emails = {u["email"] for u in data["users"]}
+        assert u1.email in emails
+        assert u2.email in emails
+
+    def test_user_item_shape(self):
+        admin = _make_user("admin_shape_u@test.com", "admin")
+        _make_user("user_shape@test.com", "user")
+
+        token = AuthHelper.create_admin_token(str(admin.id))
+        resp = client.get("/admin/users", headers={"Authorization": token})
+
+        assert resp.status_code == 200
+        user_item = next(u for u in resp.json()["users"] if u["email"] == "user_shape@test.com")
+        assert "id" in user_item
+        assert "email" in user_item
+        assert "role" in user_item
+        assert "is_active" in user_item
+        assert "created_at" in user_item
+        # Must NOT expose password hash
+        assert "hashed_password" not in user_item
+        assert "password" not in user_item
+
+    def test_filter_by_role(self):
+        admin = _make_user("admin_role_filter@test.com", "admin")
+        _make_user("user_role_f@test.com", "user")
+        agent = _make_user("agent_role_f@test.com", "agent")
+
+        token = AuthHelper.create_admin_token(str(admin.id))
+        resp = client.get("/admin/users?role=agent", headers={"Authorization": token})
+
+        assert resp.status_code == 200
+        roles = {u["role"] for u in resp.json()["users"]}
+        assert roles == {"agent"}
+
+    def test_search_by_email(self):
+        admin = _make_user("admin_search@test.com", "admin")
+        _make_user("findme_unique_xyz@test.com", "user")
+        _make_user("dontfind@test.com", "user")
+
+        token = AuthHelper.create_admin_token(str(admin.id))
+        resp = client.get("/admin/users?search=findme_unique", headers={"Authorization": token})
+
+        assert resp.status_code == 200
+        emails = [u["email"] for u in resp.json()["users"]]
+        assert any("findme_unique" in e for e in emails)
+        assert not any("dontfind" in e for e in emails)
+
+    def test_rejects_invalid_role_filter(self):
+        admin = _make_user("admin_badrole@test.com", "admin")
+        token = AuthHelper.create_admin_token(str(admin.id))
+
+        resp = client.get("/admin/users?role=superuser", headers={"Authorization": token})
+        assert resp.status_code == 400
+
+    def test_requires_admin(self):
+        agent = _make_user("agent_listusers@test.com", "agent")
+        token = AuthHelper.create_agent_token(str(agent.id))
+
+        resp = client.get("/admin/users", headers={"Authorization": token})
+        assert resp.status_code == 403
+
+    def test_requires_authentication(self):
+        resp = client.get("/admin/users")
+        assert resp.status_code == 401
+
+
+# ---------------------------------------------------------------------------
+# POST /admin/users/{id}/reset-password
+# ---------------------------------------------------------------------------
+
+class TestAdminResetPassword(BaseTestClass):
+    """POST /admin/users/{id}/reset-password — admin sets any user's password."""
+
+    def test_successful_reset(self):
+        admin = _make_user("admin_resetpw@test.com", "admin")
+        user = _make_user("user_resetpw@test.com", "user")
+
+        token = AuthHelper.create_admin_token(str(admin.id))
+        resp = client.post(
+            f"/admin/users/{user.id}/reset-password",
+            json={"new_password": "NewPass123!"},
+            headers={"Authorization": token},
+        )
+
+        assert resp.status_code == 200
+        assert "message" in resp.json()
+
+    def test_new_password_is_hashed_not_plaintext(self):
+        """Verify the stored value is not the plaintext password."""
+        from app.db.session import SessionLocal
+        admin = _make_user("admin_hash_check@test.com", "admin")
+        user = _make_user("user_hash_check@test.com", "user")
+
+        token = AuthHelper.create_admin_token(str(admin.id))
+        client.post(
+            f"/admin/users/{user.id}/reset-password",
+            json={"new_password": "NewPass123!"},
+            headers={"Authorization": token},
+        )
+
+        db = SessionLocal()
+        try:
+            updated = db.query(User).filter(User.id == user.id).first()
+            assert updated.hashed_password != "NewPass123!"
+            assert updated.hashed_password.startswith("$2b$")  # bcrypt prefix
+        finally:
+            db.close()
+
+    def test_clears_pending_otp_after_reset(self):
+        """Stale OTP tokens are cleared so they cannot be replayed."""
+        from app.db.session import SessionLocal
+        admin = _make_user("admin_otp_clear@test.com", "admin")
+        user = _make_user("user_otp_clear@test.com", "user")
+
+        # Simulate a pending OTP
+        db = SessionLocal()
+        try:
+            u = db.query(User).filter(User.id == user.id).first()
+            u.reset_otp = "somehash"
+            u.reset_otp_attempts = 2
+            db.commit()
+        finally:
+            db.close()
+
+        token = AuthHelper.create_admin_token(str(admin.id))
+        client.post(
+            f"/admin/users/{user.id}/reset-password",
+            json={"new_password": "NewPass123!"},
+            headers={"Authorization": token},
+        )
+
+        db = SessionLocal()
+        try:
+            updated = db.query(User).filter(User.id == user.id).first()
+            assert updated.reset_otp is None
+            assert updated.reset_otp_attempts == 0
+        finally:
+            db.close()
+
+    def test_cannot_reset_own_password(self):
+        admin = _make_user("admin_self@test.com", "admin")
+        token = AuthHelper.create_admin_token(str(admin.id))
+
+        resp = client.post(
+            f"/admin/users/{admin.id}/reset-password",
+            json={"new_password": "NewPass123!"},
+            headers={"Authorization": token},
+        )
+        assert resp.status_code == 400
+
+    def test_rejects_nonexistent_user(self):
+        admin = _make_user("admin_nouser@test.com", "admin")
+        token = AuthHelper.create_admin_token(str(admin.id))
+
+        resp = client.post(
+            "/admin/users/999999/reset-password",
+            json={"new_password": "NewPass123!"},
+            headers={"Authorization": token},
+        )
+        assert resp.status_code == 404
+
+    def test_enforces_password_complexity(self):
+        admin = _make_user("admin_pwcomplex@test.com", "admin")
+        user = _make_user("user_pwcomplex@test.com", "user")
+        token = AuthHelper.create_admin_token(str(admin.id))
+
+        resp = client.post(
+            f"/admin/users/{user.id}/reset-password",
+            json={"new_password": "weak"},
+            headers={"Authorization": token},
+        )
+        # App converts Pydantic validation ValueError to 400 via custom error handler
+        assert resp.status_code in (400, 422)
+
+    def test_requires_admin(self):
+        agent = _make_user("agent_resetpw@test.com", "agent")
+        user = _make_user("user_resetpw2@test.com", "user")
+        token = AuthHelper.create_agent_token(str(agent.id))
+
+        resp = client.post(
+            f"/admin/users/{user.id}/reset-password",
+            json={"new_password": "NewPass123!"},
+            headers={"Authorization": token},
+        )
+        assert resp.status_code == 403
+
+    def test_user_can_login_with_new_password(self):
+        """End-to-end: reset password then verify login works."""
+        admin = _make_user("admin_e2e@test.com", "admin")
+        user = _make_user("user_e2e@test.com", "user")
+
+        token = AuthHelper.create_admin_token(str(admin.id))
+        client.post(
+            f"/admin/users/{user.id}/reset-password",
+            json={"new_password": "NewPass123!"},
+            headers={"Authorization": token},
+        )
+
+        login_resp = client.post(
+            "/auth/login",
+            json={"email": "user_e2e@test.com", "password": "NewPass123!"},
+        )
+        assert login_resp.status_code == 200
+        assert "access_token" in login_resp.json()

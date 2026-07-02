@@ -29,8 +29,9 @@ from app.models.feedback import Feedback
 from app.models.user import User
 from app.api.auth import get_current_user
 from app.constants import UserRole, TicketStatus
-from app.schemas.admin import MetricsResponse, AdminTicketListResponse, AdminTicketItem, AgentListItem, AdminAssignRequest, FiltersMeta, PaginationMeta
+from app.schemas.admin import MetricsResponse, AdminTicketListResponse, AdminTicketItem, AgentListItem, AdminAssignRequest, AdminUserItem, AdminUserListResponse, AdminResetPasswordRequest, FiltersMeta, PaginationMeta
 from app.schemas.ticket import TicketResponse
+from app.core.security import hash_password
 from app.api.dependencies import require_agent_or_admin
 from app.core.exceptions import (
     AuthorizationError,
@@ -412,3 +413,142 @@ def admin_assign_ticket(
         db.rollback()
         logger.exception(f"Failed to admin-assign ticket {ticket_id}")
         raise InternalError("Failed to assign ticket") from e
+
+
+@router.get("/users", response_model=AdminUserListResponse)
+def list_users(
+    role: str | None = Query(None, description="Filter by role: user | agent | admin"),
+    search: str | None = Query(None, description="Search by email (partial match)"),
+    limit: int = Query(50, ge=1, le=200),
+    offset: int = Query(0, ge=0),
+    current_user: Annotated[User, Depends(require_admin)] = None,
+    db: Session = Depends(get_db),
+) -> AdminUserListResponse:
+    """
+    List all users in the system.
+
+    Supports optional filtering by role and email search.
+    Used by the Admin Users management page.
+
+    Args:
+        role: Optional role filter (user | agent | admin)
+        search: Optional partial email search
+        limit: Page size (1–200)
+        offset: Pagination offset
+        current_user: Admin user
+        db: Database session
+
+    Returns:
+        AdminUserListResponse: Paginated list of users with total count
+    """
+    try:
+        query = db.query(User)
+
+        if role:
+            allowed_roles = {"user", "agent", "admin"}
+            if role not in allowed_roles:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail=f"Invalid role '{role}'. Allowed: user, agent, admin",
+                )
+            query = query.filter(User.role == role)
+
+        if search:
+            query = query.filter(User.email.ilike(f"%{search}%"))
+
+        total = query.count()
+        users = query.order_by(User.created_at.desc()).limit(limit).offset(offset).all()
+
+        logger.info(f"Admin {current_user.id} listed users: total={total}, role={role}, search={search}")
+
+        return AdminUserListResponse(
+            users=[
+                AdminUserItem(
+                    id=u.id,
+                    email=u.email,
+                    role=u.role,
+                    is_active=u.is_active,
+                    created_at=u.created_at.isoformat() if u.created_at else None,
+                )
+                for u in users
+            ],
+            total=total,
+        )
+
+    except HTTPException:
+        raise
+    except Exception:
+        logger.exception("Failed to list users")
+        raise InternalError("Failed to retrieve users")
+
+
+@router.post("/users/{user_id}/reset-password", response_model=dict)
+def admin_reset_password(
+    user_id: int,
+    body: AdminResetPasswordRequest,
+    current_user: Annotated[User, Depends(require_admin)] = None,
+    db: Session = Depends(get_db),
+) -> dict:
+    """
+    Admin-force a password reset for any user.
+
+    Bypasses the OTP flow — intended for situations where the user
+    cannot receive email (e.g. Resend free-tier restriction) and an
+    admin needs to unblock them.  The admin sets a known temporary
+    password; the user should change it on next login.
+
+    The new password is validated against the same complexity rules as
+    self-service registration, then hashed with bcrypt before storage.
+    The previous password hash is overwritten; no plaintext is ever
+    stored or logged.
+
+    Args:
+        user_id: ID of the user whose password to reset
+        body: AdminResetPasswordRequest with new_password
+        current_user: Admin user (cannot reset their own password via
+                       this endpoint — use the standard change-password
+                       flow instead, to preserve auditability)
+        db: Database session
+
+    Returns:
+        dict: { "message": "Password reset successfully" }
+
+    Raises:
+        HTTPException 400 – admin attempting to reset their own password
+        HTTPException 404 – user not found
+    """
+    try:
+        if user_id == current_user.id:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Use the standard change-password flow to update your own password",
+            )
+
+        user = db.query(User).filter(User.id == user_id).first()
+
+        if not user:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"User {user_id} not found",
+            )
+
+        user.hashed_password = hash_password(body.new_password)
+        # Clear any pending OTP so stale reset tokens can't be replayed
+        user.reset_otp = None
+        user.reset_otp_expires_at = None
+        user.reset_otp_attempts = 0
+
+        db.commit()
+
+        logger.info(
+            f"Admin {current_user.id} reset password for user {user_id} ({user.email})"
+        )
+
+        return {"message": "Password reset successfully"}
+
+    except HTTPException:
+        raise
+    except Exception:
+        db.rollback()
+        logger.exception(f"Failed to reset password for user {user_id}")
+        raise InternalError("Failed to reset password")
