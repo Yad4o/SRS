@@ -9,7 +9,7 @@ Responsibilities:
 - Validate and document the shape of admin ticket list responses
 """
 
-from pydantic import BaseModel
+from pydantic import BaseModel, field_validator
 
 
 class TicketStatsSchema(BaseModel):
@@ -90,6 +90,32 @@ class PaginationMeta(BaseModel):
 class AdminAssignRequest(BaseModel):
     """Request body for POST /admin/tickets/{id}/assign."""
     agent_id: int
+
+
+class AdminUserItem(BaseModel):
+    """Single user entry returned by GET /admin/users."""
+    id: int
+    email: str
+    role: str
+    is_active: bool
+    created_at: str | None = None
+
+
+class AdminUserListResponse(BaseModel):
+    """Response for GET /admin/users."""
+    users: list[AdminUserItem]
+    total: int
+
+
+class AdminResetPasswordRequest(BaseModel):
+    """Request body for POST /admin/users/{id}/reset-password."""
+    new_password: str
+
+    @field_validator("new_password")
+    @classmethod
+    def password_complexity(cls, v: str) -> str:
+        from app.schemas.user import validate_password_complexity
+        return validate_password_complexity(v)
 
 
 class AgentListItem(BaseModel):
