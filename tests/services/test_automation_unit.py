@@ -20,7 +20,7 @@ from app.models.ticket import Ticket
 from app.models.feedback import Feedback
 from app.services.decision_engine import decide_resolution, get_confidence_threshold, set_confidence_threshold
 from app.services.response_generator import generate_response
-from app.api.tickets import _run_ticket_automation
+from app.services.ticket_service import run_ticket_automation
 
 
 class TestIntentClassifier:
@@ -455,9 +455,9 @@ class TestResponseGenerator:
 class TestTicketAutomation:
     """Unit tests for ticket automation orchestration."""
 
-    @patch('app.api.tickets.decide_resolution')
-    @patch('app.api.tickets.find_similar_ticket')
-    @patch('app.api.tickets.classify_intent')
+    @patch('app.services.ticket_service.decide_resolution')
+    @patch('app.services.ticket_service.find_similar_ticket')
+    @patch('app.services.ticket_service.classify_intent_ai')
     def test_automation_auto_resolve(self, mock_classify, mock_similarity, mock_decision):
         """Test full automation pipeline with auto-resolve decision."""
         # Setup mocks
@@ -481,7 +481,7 @@ class TestTicketAutomation:
         mock_db.query.return_value.filter.return_value.order_by.return_value.limit.return_value.all.return_value = []
         
         # Run automation
-        result = _run_ticket_automation(ticket, mock_db)
+        result = run_ticket_automation(ticket, mock_db)
         
         # Verify results
         assert result.status == "auto_resolved"
@@ -495,9 +495,9 @@ class TestTicketAutomation:
         mock_classify.assert_called_once_with("I cannot login to my account")
         mock_decision.assert_called_once_with(0.95)
 
-    @patch('app.api.tickets.decide_resolution')
-    @patch('app.api.tickets.find_similar_ticket')
-    @patch('app.api.tickets.classify_intent')
+    @patch('app.services.ticket_service.decide_resolution')
+    @patch('app.services.ticket_service.find_similar_ticket')
+    @patch('app.services.ticket_service.classify_intent_ai')
     def test_automation_escalate(self, mock_classify, mock_similarity, mock_decision):
         """Test automation pipeline with escalate decision."""
         # Setup mocks
@@ -518,7 +518,7 @@ class TestTicketAutomation:
         mock_db.query.return_value.filter.return_value.order_by.return_value.limit.return_value.all.return_value = []
         
         # Run automation
-        result = _run_ticket_automation(ticket, mock_db)
+        result = run_ticket_automation(ticket, mock_db)
         
         # Verify results
         assert result.status == "escalated"
@@ -530,9 +530,9 @@ class TestTicketAutomation:
         mock_classify.assert_called_once_with("Random text xyz")
         mock_decision.assert_called_once_with(0.2)
 
-    @patch('app.api.tickets.decide_resolution')
-    @patch('app.api.tickets.find_similar_ticket')
-    @patch('app.api.tickets.classify_intent')
+    @patch('app.services.ticket_service.decide_resolution')
+    @patch('app.services.ticket_service.find_similar_ticket')
+    @patch('app.services.ticket_service.classify_intent_ai')
     def test_automation_classifier_error(self, mock_classify, mock_similarity, mock_decision):
         """Test automation pipeline with classifier error."""
         # Setup mock to raise exception
@@ -552,7 +552,7 @@ class TestTicketAutomation:
         
         # Run automation - should raise exception
         with pytest.raises(Exception, match="AI service unavailable"):
-            _run_ticket_automation(ticket, mock_db)
+            run_ticket_automation(ticket, mock_db)
 
     def test_automation_confidence_at_threshold(self):
         """Test automation behavior exactly at confidence threshold."""
@@ -561,9 +561,9 @@ class TestTicketAutomation:
         try:
             set_confidence_threshold(0.75)
             
-            with patch('app.api.tickets.classify_intent') as mock_classify, \
-                 patch('app.api.tickets.find_similar_ticket') as mock_similarity, \
-                 patch('app.api.tickets.decide_resolution') as mock_decision:
+            with patch('app.services.ticket_service.classify_intent_ai') as mock_classify, \
+                 patch('app.services.ticket_service.find_similar_ticket') as mock_similarity, \
+                 patch('app.services.ticket_service.decide_resolution') as mock_decision:
                 
                 # Setup mocks for threshold test
                 mock_classify.return_value = {"intent": "login_issue", "confidence": 0.75}
@@ -583,7 +583,7 @@ class TestTicketAutomation:
                 mock_db.query.return_value.filter.return_value.order_by.return_value.limit.return_value.all.return_value = []
                 
                 # Run automation
-                result = _run_ticket_automation(ticket, mock_db)
+                result = run_ticket_automation(ticket, mock_db)
                 
                 # Should auto-resolve at threshold
                 assert result.status == "auto_resolved"
@@ -595,8 +595,8 @@ class TestTicketAutomation:
 
     def test_automation_empty_message(self):
         """Test automation with empty message."""
-        with patch('app.api.tickets.find_similar_ticket') as mock_similarity, \
-             patch('app.api.tickets.decide_resolution') as mock_decision:
+        with patch('app.services.ticket_service.find_similar_ticket') as mock_similarity, \
+             patch('app.services.ticket_service.decide_resolution') as mock_decision:
             
             # Setup mocks - classifier will return early for empty message
             mock_similarity.return_value = None
@@ -615,7 +615,7 @@ class TestTicketAutomation:
             mock_db.query.return_value.filter.return_value.order_by.return_value.limit.return_value.all.return_value = []
             
             # Run automation
-            result = _run_ticket_automation(ticket, mock_db)
+            result = run_ticket_automation(ticket, mock_db)
             
             # Should escalate empty messages
             assert result.status == "escalated"

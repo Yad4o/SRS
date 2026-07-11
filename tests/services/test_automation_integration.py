@@ -26,6 +26,7 @@ from app.services.classifier import classify_intent
 from app.services.similarity_search import find_similar_ticket
 from app.services.decision_engine import decide_resolution
 from app.services.response_generator import generate_response
+from tests.conftest import AuthHelper
 
 # Test database setup - use temporary database for parallel safety
 import tempfile
@@ -92,10 +93,10 @@ def client(integration_engine):
 class TestTicketLifecycle:
     """Integration tests for complete ticket lifecycle."""
 
-    @patch('app.api.tickets.classify_intent')
-    @patch('app.api.tickets.find_similar_ticket')
-    @patch('app.api.tickets.decide_resolution')
-    @patch('app.api.tickets.generate_response')
+    @patch('app.services.ticket_service.classify_intent_ai')
+    @patch('app.services.ticket_service.find_similar_ticket')
+    @patch('app.services.ticket_service.decide_resolution')
+    @patch('app.services.ticket_service.generate_response')
     def test_full_lifecycle_auto_resolve(self, mock_response, mock_decision, mock_similarity, mock_classify, client, integration_db_session):
         """Test complete lifecycle: create -> classify -> similar -> decide -> respond."""
         # Setup mocks for auto-resolve scenario
@@ -142,9 +143,9 @@ class TestTicketLifecycle:
         mock_decision.assert_called_once_with(0.95)
         mock_response.assert_called_once()
 
-    @patch('app.api.tickets.classify_intent')
-    @patch('app.api.tickets.find_similar_ticket')
-    @patch('app.api.tickets.decide_resolution')
+    @patch('app.services.ticket_service.classify_intent_ai')
+    @patch('app.services.ticket_service.find_similar_ticket')
+    @patch('app.services.ticket_service.decide_resolution')
     def test_full_lifecycle_escalate(self, mock_decision, mock_similarity, mock_classify, client, integration_db_session):
         """Test complete lifecycle with escalation."""
         # Setup mocks for escalate scenario
@@ -185,8 +186,11 @@ class TestTicketLifecycle:
         integration_db_session.commit()
         integration_db_session.refresh(ticket)
         
-        # Retrieve ticket via API
-        response = client.get(f"/tickets/{ticket.id}")
+        # Retrieve ticket via API (requires auth — see app/api/tickets.py:get_ticket)
+        response = client.get(
+            f"/tickets/{ticket.id}",
+            headers={"Authorization": AuthHelper.create_agent_token("1")},
+        )
         
         assert response.status_code == 200
         ticket_data = response.json()
@@ -211,22 +215,24 @@ class TestTicketLifecycle:
             integration_db_session.add(ticket)
         integration_db_session.commit()
         
+        agent_headers = {"Authorization": AuthHelper.create_agent_token("1")}
+
         # Test filtering by auto_resolved status
-        response = client.get("/tickets/?status=auto_resolved")
+        response = client.get("/tickets/?status=auto_resolved", headers=agent_headers)
         assert response.status_code == 200
         data = response.json()
         assert len(data["tickets"]) == 1
         assert data["tickets"][0]["status"] == "auto_resolved"
         
         # Test filtering by escalated status
-        response = client.get("/tickets/?status=escalated")
+        response = client.get("/tickets/?status=escalated", headers=agent_headers)
         assert response.status_code == 200
         data = response.json()
         assert len(data["tickets"]) == 1
         assert data["tickets"][0]["status"] == "escalated"
         
         # Test no filter (should return all)
-        response = client.get("/tickets/")
+        response = client.get("/tickets/", headers=agent_headers)
         assert response.status_code == 200
         data = response.json()
         assert len(data["tickets"]) == 3
@@ -452,7 +458,10 @@ class TestAPIValidation:
 
     def test_get_nonexistent_ticket(self, client, integration_db_session):
         """Test retrieving non-existent ticket with database setup."""
-        response = client.get("/tickets/99999")
+        response = client.get(
+            "/tickets/99999",
+            headers={"Authorization": AuthHelper.create_agent_token("1")},
+        )
         
         assert response.status_code == 404
         error_data = response.json()

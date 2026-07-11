@@ -146,8 +146,8 @@ import json
 
 def test_similarity_search_db_cache_hit():
     """Call search twice with identical message → DB query runs once, second call served from cache."""
-    # We'll test this via _run_ticket_automation in app.api.tickets
-    from app.api.tickets import _run_ticket_automation
+    # We'll test this via run_ticket_automation in app.services.ticket_service
+    from app.services.ticket_service import run_ticket_automation
     from app.services.similarity_search import _cache_key
     
     mock_db = MagicMock(spec=Session)
@@ -158,13 +158,13 @@ def test_similarity_search_db_cache_hit():
     mock_ticket.status = "open"
     
     # Mocking components
-    with patch("app.api.tickets.classify_intent") as mock_classify:
+    with patch("app.services.ticket_service.classify_intent_ai") as mock_classify:
         mock_classify.return_value = {"intent": "payment_issue", "confidence": 0.9, "sub_intent": "refund"}
         
-        with patch("app.api.tickets.generate_response", return_value=("mocked response", "template")):
-            with patch("app.api.tickets.decide_resolution", return_value="auto_resolve"):
-                with patch("app.api.tickets._get_cache_client") as mock_get_cache:
-                    with patch("app.api.tickets._cache_key", return_value="test-cache-key"):
+        with patch("app.services.ticket_service.generate_response", return_value=("mocked response", "template")):
+            with patch("app.services.ticket_service.decide_resolution", return_value="AUTO_RESOLVE"):
+                with patch("app.services.ticket_service._get_cache_client") as mock_get_cache:
+                    with patch("app.services.ticket_service._cache_key", return_value="test-cache-key"):
                         mock_cache = MagicMock()
                         mock_get_cache.return_value = mock_cache
                         
@@ -172,13 +172,13 @@ def test_similarity_search_db_cache_hit():
                         mock_cache.get.return_value = None
                         
                         # Patch the query function as a spy (Issue #5)
-                        from app.api.tickets import get_resolved_tickets
-                        with patch("app.api.tickets.get_resolved_tickets", wraps=get_resolved_tickets) as spy_query:
+                        from app.services.ticket_service import get_resolved_tickets
+                        with patch("app.services.ticket_service.get_resolved_tickets", wraps=get_resolved_tickets) as spy_query:
                             # Setup return value if needed, but wraps=real_fn will call the real one (which is fine in SQLite test)
                             # Or just return empty list to be safe
                             spy_query.return_value = []
                             
-                            _run_ticket_automation(mock_ticket, mock_db)
+                            run_ticket_automation(mock_ticket, mock_db)
                             
                             # Verify query was made
                             assert spy_query.call_count == 1
@@ -192,7 +192,7 @@ def test_similarity_search_db_cache_hit():
                             })
                             
                             spy_query.reset_mock()
-                            _run_ticket_automation(mock_ticket, mock_db)
+                            run_ticket_automation(mock_ticket, mock_db)
                             
                             # Verify query was NOT made this time
                             assert spy_query.call_count == 0

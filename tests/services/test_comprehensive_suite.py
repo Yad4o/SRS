@@ -22,11 +22,12 @@ from sqlalchemy.orm import sessionmaker
 from app.main import app
 from app.db.session import get_db, Base
 from app.models.ticket import Ticket
-from tests.test_ai_mocks import (
+from tests.services.test_ai_mocks import (
     MockAIService, 
     TestScenarios, 
     create_mock_ai_service
 )
+from tests.conftest import AuthHelper
 
 # Test database setup - use temporary database for parallel safety
 import tempfile
@@ -265,10 +266,10 @@ class TestRealAIImplementation:
 class TestEndToEndScenarios:
     """Test complete end-to-end scenarios."""
 
-    @patch('app.api.tickets.classify_intent')
-    @patch('app.api.tickets.find_similar_ticket')
-    @patch('app.api.tickets.decide_resolution')
-    @patch('app.api.tickets.generate_response')
+    @patch('app.services.ticket_service.classify_intent_ai')
+    @patch('app.services.ticket_service.find_similar_ticket')
+    @patch('app.services.ticket_service.decide_resolution')
+    @patch('app.services.ticket_service.generate_response')
     def test_login_issue_auto_resolve(self, mock_response, mock_decision, mock_similarity, mock_classify, client, db_session):
         """Test complete login issue auto-resolve scenario."""
         # Setup mocks
@@ -299,8 +300,8 @@ class TestEndToEndScenarios:
         assert db_ticket.intent == "login_issue"
         assert db_ticket.response_source == "similarity"
 
-    @patch('app.api.tickets.classify_intent')
-    @patch('app.api.tickets.decide_resolution')
+    @patch('app.services.ticket_service.classify_intent_ai')
+    @patch('app.services.ticket_service.decide_resolution')
     def test_unknown_intent_escalate(self, mock_decision, mock_classify, client, db_session):
         """Test unknown intent escalation scenario."""
         # Setup mocks
@@ -322,7 +323,7 @@ class TestEndToEndScenarios:
 class TestEdgeCases:
     """Test edge cases and boundary conditions."""
 
-    @patch('app.api.tickets.classify_intent')
+    @patch('app.services.ticket_service.classify_intent_ai')
     def test_very_long_message(self, mock_classify, client, db_session):
         """Test handling of very long messages."""
         mock_classify.return_value = {"intent": "unknown", "confidence": 0.3}
@@ -334,7 +335,7 @@ class TestEdgeCases:
         ticket_data = response.json()
         assert ticket_data["message"] == long_message
 
-    @patch('app.api.tickets.classify_intent')
+    @patch('app.services.ticket_service.classify_intent_ai')
     def test_special_characters(self, mock_classify, client, db_session):
         """Test handling of special characters and unicode."""
         mock_classify.return_value = {"intent": "login_issue", "confidence": 0.85}
@@ -346,7 +347,7 @@ class TestEdgeCases:
         ticket_data = response.json()
         assert ticket_data["message"] == special_message
 
-    @patch('app.api.tickets.classify_intent')
+    @patch('app.services.ticket_service.classify_intent_ai')
     def test_concurrent_processing(self, mock_classify, client, db_session):
         """Test concurrent ticket processing."""
         mock_classify.return_value = {"intent": "login_issue", "confidence": 0.8}
@@ -380,7 +381,7 @@ class TestEdgeCases:
 class TestPerformanceAndReliability:
     """Test performance and reliability characteristics."""
 
-    @patch('app.api.tickets.classify_intent')
+    @patch('app.services.ticket_service.classify_intent_ai')
     def test_processing_performance(self, mock_classify, client, db_session):
         """Test processing performance meets requirements."""
         mock_classify.return_value = {"intent": "login_issue", "confidence": 0.8}
@@ -396,7 +397,7 @@ class TestPerformanceAndReliability:
         assert processing_time < 3.0
         assert response.status_code == 201
 
-    @patch('app.api.tickets.classify_intent')
+    @patch('app.services.ticket_service.classify_intent_ai')
     def test_error_recovery(self, mock_classify, client, db_session):
         """Test system recovery from errors."""
         # Mock to fail on first call, succeed on second
@@ -428,10 +429,10 @@ class TestSystemIntegration:
 
     def test_database_integration(self, client, db_session):
         """Test database integration with mocked AI."""
-        with patch('app.api.tickets.classify_intent') as mock_classify, \
-             patch('app.api.tickets.find_similar_ticket') as mock_similarity, \
-             patch('app.api.tickets.decide_resolution') as mock_decision, \
-             patch('app.api.tickets.generate_response') as mock_response:
+        with patch('app.services.ticket_service.classify_intent_ai') as mock_classify, \
+             patch('app.services.ticket_service.find_similar_ticket') as mock_similarity, \
+             patch('app.services.ticket_service.decide_resolution') as mock_decision, \
+             patch('app.services.ticket_service.generate_response') as mock_response:
             
             # Setup mocks
             mock_classify.return_value = {"intent": "login_issue", "confidence": 0.95}
@@ -456,7 +457,7 @@ class TestSystemIntegration:
 
     def test_api_endpoints_integration(self, client, db_session):
         """Test API endpoints integration."""
-        with patch('app.api.tickets.classify_intent') as mock_classify:
+        with patch('app.services.ticket_service.classify_intent_ai') as mock_classify:
             mock_classify.return_value = {"intent": "login_issue", "confidence": 0.8}
             
             # Create ticket
@@ -465,15 +466,17 @@ class TestSystemIntegration:
             ticket_data = create_response.json()
             ticket_id = ticket_data["id"]
             
-            # Get ticket
-            get_response = client.get(f"/tickets/{ticket_id}")
+            agent_headers = {"Authorization": AuthHelper.create_agent_token("1")}
+
+            # Get ticket (requires auth — see app/api/tickets.py:get_ticket)
+            get_response = client.get(f"/tickets/{ticket_id}", headers=agent_headers)
             assert get_response.status_code == 200
             retrieved_data = get_response.json()
             assert retrieved_data["id"] == ticket_id
             assert retrieved_data["message"] == "API integration test"
             
-            # List tickets
-            list_response = client.get("/tickets/")
+            # List tickets (requires auth to see any results)
+            list_response = client.get("/tickets/", headers=agent_headers)
             assert list_response.status_code == 200
             list_data = list_response.json()
             assert len(list_data["tickets"]) >= 1

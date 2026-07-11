@@ -267,8 +267,16 @@ def test_list_tickets_agent_token_returns_all_tickets(client_with_temp_db, temp_
     assert len(tickets_data["tickets"]) == 2  # All tickets returned
 
 
-def test_list_tickets_without_token_returns_all_tickets(client_with_temp_db, temp_db):
-    """Test GET /tickets without token returns all tickets (unauthenticated access)."""
+def test_list_tickets_without_token_returns_empty_list(client_with_temp_db, temp_db):
+    """Test GET /tickets without token returns an empty list.
+
+    Previously unauthenticated callers received every ticket (CWE-284 /
+    improper access control) — SQLAlchemy translates `Ticket.user_id ==
+    None` to `IS NULL`, so anonymous requests silently got every
+    ownerless ticket. Fixed during the production-readiness audit (see
+    app/api/tickets.py:list_tickets); anonymous callers now get an empty
+    list instead of any ticket data.
+    """
     client, db = client_with_temp_db
     
     # Create a user for the first ticket
@@ -294,7 +302,7 @@ def test_list_tickets_without_token_returns_all_tickets(client_with_temp_db, tem
     assert response.status_code == 200
     
     tickets_data = response.json()
-    assert len(tickets_data["tickets"]) == 2  # All tickets returned
+    assert len(tickets_data["tickets"]) == 0  # No tickets exposed to anonymous callers
 
 
 def test_create_ticket_with_invalid_token_returns_201_as_anonymous(client_with_temp_db):

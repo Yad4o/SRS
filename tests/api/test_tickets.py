@@ -139,8 +139,12 @@ class TestListTickets:
         create_response = client.post("/tickets/", json={"message": "Test ticket"})
         assert create_response.status_code == 201
         
-        # List tickets
-        response = client.get("/tickets/")
+        # List tickets (agent token — unauthenticated listing now returns an
+        # empty list by design, see app/api/tickets.py:list_tickets)
+        response = client.get(
+            "/tickets/",
+            headers={"Authorization": AuthHelper.create_agent_token("1")},
+        )
         
         assert response.status_code == 200
         data = response.json()
@@ -191,7 +195,10 @@ class TestListTickets:
         for i in range(10):
             DatabaseHelper.create_ticket(db, f"Test message {i}")
         
-        response = client.get("/tickets/?limit=5")
+        response = client.get(
+            "/tickets/?limit=5",
+            headers={"Authorization": AuthHelper.create_agent_token("1")},
+        )
         
         assert response.status_code == 200
         data = response.json()
@@ -208,7 +215,12 @@ class TestGetTicket(BaseTestClass):
         
         ticket = DatabaseHelper.create_ticket(db, "Test message")
         
-        response = client.get(f"/tickets/{ticket.id}")
+        # GET /tickets/{id} now requires auth (401 for anonymous callers),
+        # see app/api/tickets.py:get_ticket
+        response = client.get(
+            f"/tickets/{ticket.id}",
+            headers={"Authorization": AuthHelper.create_agent_token("1")},
+        )
         
         assert response.status_code == 200
         data = response.json()
@@ -216,7 +228,10 @@ class TestGetTicket(BaseTestClass):
 
     def test_get_ticket_not_found(self):
         """Test getting a non-existent ticket."""
-        response = client.get("/tickets/99999")
+        response = client.get(
+            "/tickets/99999",
+            headers={"Authorization": AuthHelper.create_agent_token("1")},
+        )
         
         self.assert_error_response(response, 404, "not found")
 
@@ -226,7 +241,10 @@ class TestGetTicket(BaseTestClass):
         
         ticket = DatabaseHelper.create_ticket(db, "Test message")
         
-        response = client.get(f"/tickets/{ticket.id}")
+        response = client.get(
+            f"/tickets/{ticket.id}",
+            headers={"Authorization": AuthHelper.create_agent_token("1")},
+        )
         
         assert response.status_code == 200
         data = response.json()
@@ -251,8 +269,11 @@ class TestTicketAPIIntegration(BaseTestClass):
         assert create_response.status_code == 201
         created_ticket = create_response.json()
         
-        # Retrieve ticket
-        get_response = client.get(f"/tickets/{created_ticket['id']}")
+        # Retrieve ticket (requires auth)
+        get_response = client.get(
+            f"/tickets/{created_ticket['id']}",
+            headers={"Authorization": AuthHelper.create_agent_token("1")},
+        )
         
         assert get_response.status_code == 200
         retrieved_ticket = get_response.json()
@@ -274,8 +295,11 @@ class TestTicketAPIIntegration(BaseTestClass):
             assert response.status_code == 201
             created_ids.append(response.json()['id'])
         
-        # List all tickets
-        response = client.get("/tickets/")
+        # List all tickets (requires auth to see them)
+        response = client.get(
+            "/tickets/",
+            headers={"Authorization": AuthHelper.create_agent_token("1")},
+        )
         assert response.status_code == 200
         
         data = response.json()
@@ -307,22 +331,19 @@ class TestTicketAccessControl(BaseTestClass):
 
     def test_authenticated_create_sets_user_id(self, agent_token):
         """Test that authenticated ticket creation sets user_id."""
-        from app.main import app
-        from app.api.auth import decode_token
+        # Token decoding now happens in app.services.ticket_service via
+        # app.core.security.decode_token, not app.api.tickets.decode_token,
+        # so we use a real signed token for user 123 instead of mocking a
+        # stale import path.
+        response = client.post(
+            "/tickets/",
+            json={"message": "Owned ticket"},
+            headers={"Authorization": AuthHelper.create_user_token("123")},
+        )
         
-        # Mock the authentication to set a specific user ID
-        with patch("app.api.tickets.decode_token") as mock_decode:
-            mock_decode.return_value = {"sub": "123", "role": "user"}
-            
-            response = client.post(
-                "/tickets/", 
-                json={"message": "Owned ticket"},
-                headers={"Authorization": "Bearer test-token"}
-            )
-            
-            assert response.status_code == 201
-            data = response.json()
-            assert data["user_id"] == 123
+        assert response.status_code == 201
+        data = response.json()
+        assert data["user_id"] == 123
 
     def test_list_tickets_user_isolation(self, db):
         """Test that users can only see their own tickets."""
