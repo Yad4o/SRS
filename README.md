@@ -1,5 +1,13 @@
 # 🤖 Automated Customer Support Resolution System
 
+[![Tests](https://github.com/yad4o/SRS/actions/workflows/tests.yml/badge.svg)](https://github.com/yad4o/SRS/actions/workflows/tests.yml)
+[![Tests Passing](https://img.shields.io/badge/tests-654%20passing-brightgreen)](https://github.com/yad4o/SRS/actions/workflows/tests.yml)
+[![Coverage](https://img.shields.io/badge/coverage-80%25-green)](README.md#-verified-benchmarks)
+[![Python](https://img.shields.io/badge/python-3.10%2B-blue)](https://www.python.org/)
+[![FastAPI](https://img.shields.io/badge/FastAPI-0.118-teal)](https://fastapi.tiangolo.com/)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+[![PRs Welcome](https://img.shields.io/badge/PRs-welcome-brightgreen.svg)](CONTRIBUTING.md)
+
 > **AI-Powered Backend for Intelligent Ticket Classification & Resolution**
 
 An enterprise-grade backend system that automatically classifies, resolves, and escalates customer support tickets using **FastAPI**, **Python**, and **Advanced NLP**, while ensuring safety through confidence-based decision making and human oversight.
@@ -24,6 +32,7 @@ An enterprise-grade backend system that automatically classifies, resolves, and 
 - [🧪 Testing](#-testing)
 - [🗃️ Database Migrations (Alembic)](#️-database-migrations-alembic)
 - [👥 Development Team](#-development-team)
+- [🤝 Community & Contributing](#-community--contributing)
 - [📜 License](#-license)
 
 ---
@@ -749,6 +758,16 @@ For production, switch to Neon PostgreSQL: set `DATABASE_URL=postgresql://...` i
 - **Documentation**: Comprehensive technical specs in `/docs/`
 - **Issues**: Bug reports and feature requests via GitHub Issues
 - **Discussions**: Community support and questions
+
+---
+
+---
+
+## 🤝 Community & Contributing
+
+- **[Contributing Guide](CONTRIBUTING.md)** — setup, test commands, PR checklist
+- **[Code of Conduct](CODE_OF_CONDUCT.md)** — Contributor Covenant v2.1
+- **[Security Policy](SECURITY.md)** — how to report vulnerabilities privately
 
 ---
 
