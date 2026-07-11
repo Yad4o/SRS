@@ -1,5 +1,6 @@
 # 🤖 Automated Customer Support Resolution System
 
+[![Tests](https://github.com/yad4o/SRS/actions/workflows/tests.yml/badge.svg)](https://github.com/yad4o/SRS/actions/workflows/tests.yml)
 [![Tests Passing](https://img.shields.io/badge/tests-654%20passing-brightgreen)](README.md#-verified-benchmarks)
 [![Coverage](https://img.shields.io/badge/coverage-80%25-green)](README.md#-verified-benchmarks)
 [![Python](https://img.shields.io/badge/python-3.10%2B-blue)](https://www.python.org/)
