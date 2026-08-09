@@ -129,9 +129,11 @@ const baseURL = process.env.NODE_ENV === 'production'
 ```
 
 ### CORS Configuration
-In your backend `.env`:
+By default the API allows requests from any origin (`allow_origins=["*"]`) —
+it's meant to be called directly from other people's frontends. To restrict
+this for your own deployment, set `CORS_ORIGINS` in your backend `.env`:
 ```bash
-ALLOWED_ORIGINS=https://yad4o.github.io/srs-frontend,https://your-custom-domain.com
+CORS_ORIGINS=["https://yad4o.github.io","https://your-custom-domain.com"]
 ```
 
 ---
