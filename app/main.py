@@ -24,7 +24,7 @@ from slowapi import _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
 from app.core.limiter import limiter
 
-from app.api import auth, demo, tickets, feedback, admin
+from app.api import auth, demo, tickets, feedback, admin, agent
 from app.core.config import settings
 from app.core.error_handlers import setup_exception_handlers
 from app.db.session import engine, init_db
@@ -127,6 +127,7 @@ def create_app() -> FastAPI:
     #   admin    → admin metrics & controls
 
     app.include_router(tickets.router, tags=["Tickets"])
+    app.include_router(agent.router, tags=["Agent"])
     app.include_router(feedback.router, tags=["Feedback"])
     app.include_router(admin.router, tags=["Admin"])
     app.include_router(auth.router)

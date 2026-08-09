@@ -104,7 +104,7 @@ if response.status_code == 200:
     headers = {'Authorization': f'Bearer {token}'}
     
     # Test agent-only endpoint
-    assign_response = requests.post('http://127.0.0.1:8000/tickets/1/assign', headers=headers)
+    assign_response = requests.post('http://127.0.0.1:8000/agent/tickets/1/assign', headers=headers)
     print(f"Can assign tickets: {assign_response.status_code != 403}")
 ```
 

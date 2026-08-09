@@ -358,7 +358,7 @@ class TestTicketAccessControl(BaseTestClass):
         ticket2 = DatabaseHelper.create_ticket(db, "User 2 Ticket", user2.id)
         
         # Mock authentication for user 1
-        with patch("app.api.tickets.decode_token") as mock_decode:
+        with patch("app.core.security.decode_token") as mock_decode:
             mock_decode.return_value = {"sub": str(user1.id), "role": "user"}
             
             response = client.get("/tickets/", headers={"Authorization": AuthHelper.create_user_token(str(user1.id))})
@@ -373,13 +373,13 @@ class TestTicketAccessControl(BaseTestClass):
         from tests.conftest import DatabaseHelper
         
         # Create an escalated ticket
-        with patch("app.api.tickets.classify_intent", return_value={"intent": "login_issue", "confidence": 0.1}):
-            with patch("app.api.tickets.decide_resolution", return_value="escalate"):
+        with patch("app.services.ticket_service.classify_intent_ai", return_value={"intent": "login_issue", "confidence": 0.1}):
+            with patch("app.services.ticket_service.decide_resolution", return_value="escalate"):
                 resp = client.post("/tickets/", json={"message": "Fix me"})
                 assert resp.json()["status"] == "escalated"
                 ticket_id = resp.json()["id"]
 
-        response = client.post(f"/tickets/{ticket_id}/assign", headers={"Authorization": agent_token})
+        response = client.post(f"/agent/tickets/{ticket_id}/assign", headers={"Authorization": agent_token})
         assert response.status_code == 200
         assert response.json()["assigned_agent_id"] is not None
 
@@ -388,13 +388,13 @@ class TestTicketAccessControl(BaseTestClass):
         from tests.conftest import DatabaseHelper
         
         # Create an escalated ticket
-        with patch("app.api.tickets.classify_intent", return_value={"intent": "login_issue", "confidence": 0.1}):
-            with patch("app.api.tickets.decide_resolution", return_value="escalate"):
+        with patch("app.services.ticket_service.classify_intent_ai", return_value={"intent": "login_issue", "confidence": 0.1}):
+            with patch("app.services.ticket_service.decide_resolution", return_value="escalate"):
                 resp = client.post("/tickets/", json={"message": "Fix me"})
                 assert resp.json()["status"] == "escalated"
                 ticket_id = resp.json()["id"]
 
-        response = client.post(f"/tickets/{ticket_id}/assign", headers={"Authorization": user_token})
+        response = client.post(f"/agent/tickets/{ticket_id}/assign", headers={"Authorization": user_token})
         assert response.status_code == 403
 
     def test_agent_close_escalated_ticket(self, agent_token):
@@ -402,13 +402,13 @@ class TestTicketAccessControl(BaseTestClass):
         from tests.conftest import DatabaseHelper
         
         # Create an escalated ticket
-        with patch("app.api.tickets.classify_intent", return_value={"intent": "login_issue", "confidence": 0.1}):
-            with patch("app.api.tickets.decide_resolution", return_value="escalate"):
+        with patch("app.services.ticket_service.classify_intent_ai", return_value={"intent": "login_issue", "confidence": 0.1}):
+            with patch("app.services.ticket_service.decide_resolution", return_value="escalate"):
                 resp = client.post("/tickets/", json={"message": "Close me"})
                 assert resp.json()["status"] == "escalated"
                 ticket_id = resp.json()["id"]
 
-        response = client.post(f"/tickets/{ticket_id}/close", headers={"Authorization": agent_token})
+        response = client.post(f"/agent/tickets/{ticket_id}/close", headers={"Authorization": agent_token})
         assert response.status_code == 200
         assert response.json()["status"] == "closed"
 
@@ -418,7 +418,7 @@ class TestRateLimiting(BaseTestClass):
 
     def test_create_ticket_rate_limit(self, reset_limiter):
         """Send 61 sequential POSTs to POST /tickets/ -> 61st returns HTTP 429."""
-        with patch("app.api.tickets.classify_intent", return_value={"intent": "test", "confidence": 0.9}):
+        with patch("app.services.ticket_service.classify_intent_ai", return_value={"intent": "test", "confidence": 0.9}):
             for i in range(60):
                 resp = client.post("/tickets/", json={"message": f"rate limit test {i}"})
                 assert resp.status_code == 201
