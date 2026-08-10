@@ -24,7 +24,7 @@ from slowapi import _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
 from app.core.limiter import limiter
 
-from app.api import auth, demo, tickets, feedback, admin
+from app.api import auth, demo, tickets, feedback, admin, public
 from app.core.config import settings
 from app.core.error_handlers import setup_exception_handlers
 from app.db.session import engine, init_db
@@ -78,9 +78,12 @@ def create_app() -> FastAPI:
     app = FastAPI(
         title="Automated Customer Support Resolution System",
         description=(
-            "Backend service that automatically classifies, "
-            "resolves, and escalates customer support tickets "
-            "using AI-driven decision logic."
+            "AI-powered support message classifier and auto-responder.\n\n"
+            "**No login needed.** Send a message to `POST /resolve` and get an "
+            "instant classification plus (when confident) a generated answer — "
+            "free to call, nothing to sign up for. Everything else in this API "
+            "(ticket history, agent queues, admin metrics) is optional and lives "
+            "behind auth for teams that want it."
         ),
         version="0.1.0",
         lifespan=lifespan,
@@ -146,10 +149,15 @@ def create_app() -> FastAPI:
     # Router Registration
     # --------------------------------------------------
     # Each router handles a separate domain:
+    #   public   → the free, no-login single-endpoint API (start here)
     #   auth     → authentication & authorization
     #   tickets  → ticket lifecycle
     #   feedback → user feedback
     #   admin    → admin metrics & controls
+    #
+    # `public` is registered first so it's the first thing listed in
+    # /docs — it's the one endpoint most integrators actually need.
+    app.include_router(public.router, tags=["Public API"])
 
     app.include_router(tickets.router, tags=["Tickets"])
     app.include_router(feedback.router, tags=["Feedback"])
@@ -164,6 +172,20 @@ def create_app() -> FastAPI:
     # --------------------------------------------------
     # Health Check Endpoint
     # --------------------------------------------------
+
+    @app.get("/", tags=["Health"])
+    def root() -> dict:
+        """
+        Landing route — points people at the one endpoint that matters.
+
+        Returns:
+            dict: Quick pointers to docs and the public resolve endpoint.
+        """
+        return {
+            "service": "automated-customer-support",
+            "try_it": "POST /resolve  (no login required)",
+            "docs": "/docs",
+        }
 
     @app.get("/health", tags=["Health"])
     def health_check() -> dict:

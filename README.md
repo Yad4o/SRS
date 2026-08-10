@@ -14,6 +14,52 @@ An enterprise-grade backend system that automatically classifies, resolves, and 
 
 ---
 
+## ⚡ Quickstart — no login required
+
+The core service is one free, public endpoint. No API key, no signup, no auth header.
+
+```bash
+curl -X POST https://<your-deployment>/resolve \
+  -H "Content-Type: application/json" \
+  -d '{"message": "How do I reset my password?"}'
+```
+
+```json
+{
+  "intent": "login_issue",
+  "sub_intent": "password_reset",
+  "confidence": 0.95,
+  "sentiment": "neutral",
+  "sentiment_confidence": 0.8,
+  "decision": "AUTO_RESOLVE",
+  "response": "It looks like you need to reset your password. Click 'Forgot Password' ...",
+  "response_source": "template"
+}
+```
+
+Drop it into any repo — a webpage, a Discord bot, a support widget — with a couple lines:
+
+```js
+const res = await fetch("https://<your-deployment>/resolve", {
+  method: "POST",
+  headers: { "Content-Type": "application/json" },
+  body: JSON.stringify({ message: userMessage }),
+});
+const { decision, response } = await res.json();
+```
+
+```python
+import requests
+r = requests.post("https://<your-deployment>/resolve", json={"message": userMessage})
+result = r.json()
+```
+
+Nothing is stored — each call is stateless. `decision` is either `AUTO_RESOLVE` (with a ready-to-use `response`) or `ESCALATE` (route to a human on your end). Try it live at `/docs`.
+
+Everything else in this repo — ticket history, agent queues, admin metrics — is optional infrastructure for teams that want it, and lives behind auth. See [Ticket Lifecycle](#-ticket-lifecycle) and [Security Design](#-security-design) below if you need that layer.
+
+---
+
 ## 📋 Table of Contents
 
 - [🎯 Overview](#-overview)
