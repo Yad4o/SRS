@@ -167,6 +167,15 @@ class TestCORSMiddleware:
         # With allow_origins=["*"], the header value is "*"
         assert "access-control-allow-origin" in response.headers
 
+    def test_cors_allows_arbitrary_origin(self):
+        """The API is meant to be called from any frontend — any Origin should be allowed."""
+        _, client = make_client()
+        response = client.get(
+            "/health",
+            headers={"Origin": "https://some-random-integrators-site.example"},
+        )
+        assert response.headers.get("access-control-allow-origin") == "*"
+
 
 # ---------------------------------------------------------------------------
 # TestLifespan — startup/shutdown lifecycle

@@ -24,7 +24,7 @@ from slowapi import _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
 from app.core.limiter import limiter
 
-from app.api import auth, demo, tickets, feedback, admin, agent
+from app.api import auth, demo, tickets, feedback, admin, agent, public
 from app.core.config import settings
 from app.core.error_handlers import setup_exception_handlers
 from app.db.session import engine, init_db
@@ -78,12 +78,49 @@ def create_app() -> FastAPI:
     app = FastAPI(
         title="Automated Customer Support Resolution System",
         description=(
-            "Backend service that automatically classifies, "
-            "resolves, and escalates customer support tickets "
-            "using AI-driven decision logic."
+            "AI-powered support message classifier and auto-responder.\n\n"
+            "**No login needed.** Send a message to `POST /resolve` and get an "
+            "instant classification plus (when confident) a generated answer — "
+            "free to call, nothing to sign up for. Everything else in this API "
+            "(ticket history, agent queues, admin metrics) is optional and lives "
+            "behind auth for teams that want it."
         ),
         version="0.1.0",
         lifespan=lifespan,
+        openapi_tags=[
+            {
+                "name": "Public API",
+                "description": "The free, no-login endpoint. Start here.",
+            },
+            {
+                "name": "Tickets",
+                "description": "Create and view support tickets. No login needed to create one.",
+            },
+            {
+                "name": "Agent",
+                "description": "Agent-only ticket queue: claim, work, and close escalated tickets. Requires an agent or admin token.",
+            },
+            {
+                "name": "Feedback",
+                "description": "Rate how well a resolved ticket's answer worked.",
+            },
+            {
+                "name": "Admin",
+                "description": "Admin-only metrics and controls. Requires an admin token.",
+            },
+            {
+                "name": "Authentication",
+                "description": "Register, log in, and manage sessions — only needed for the agent/admin dashboard, not for basic ticket use.",
+            },
+            {
+                "name": "Demo",
+                "description": "Sample data browsing for local development. Disabled in production.",
+            },
+            {
+                "name": "Health",
+                "description": "Service status checks.",
+            },
+        ],
     )
 
     # --------------------------------------------------
@@ -91,18 +128,17 @@ def create_app() -> FastAPI:
     # --------------------------------------------------
 
     # CORS Middleware
-    # allow_origin_regex covers every Vercel preview + production URL for this
-    # project (e.g. srs-frontend-rho.vercel.app, srs-frontend-<hash>-<team>.vercel.app),
-    # since Vercel mints a new unique URL for every deployment.
+    #
+    # Wide open on purpose: this API is designed to be called directly from
+    # other people's frontends (the whole point of POST /resolve is "embed
+    # this in your repo"), and auth here is a Bearer token in the
+    # Authorization header, never a cookie — so allow_credentials=False +
+    # allow_origins=["*"] is safe. If cookie-based auth is ever introduced,
+    # this needs to go back to an explicit origin allowlist.
     app.add_middleware(
         CORSMiddleware,
-        allow_origins=settings.CORS_ORIGINS if settings.CORS_ORIGINS else [
-            "https://srs-frontend-rho.vercel.app",
-            "http://localhost:3000",  # Local development
-            "http://localhost:5173",  # Vite dev server
-        ],
-        allow_origin_regex=r"https://srs-frontend.*\.vercel\.app",
-        allow_credentials=True,
+        allow_origins=settings.CORS_ORIGINS if settings.CORS_ORIGINS else ["*"],
+        allow_credentials=False,
         allow_methods=["*"],
         allow_headers=["*"],
     )
@@ -121,10 +157,15 @@ def create_app() -> FastAPI:
     # Router Registration
     # --------------------------------------------------
     # Each router handles a separate domain:
+    #   public   → the free, no-login single-endpoint API (start here)
     #   auth     → authentication & authorization
     #   tickets  → ticket lifecycle
     #   feedback → user feedback
     #   admin    → admin metrics & controls
+    #
+    # `public` is registered first so it's the first thing listed in
+    # /docs — it's the one endpoint most integrators actually need.
+    app.include_router(public.router, tags=["Public API"])
 
     app.include_router(tickets.router, tags=["Tickets"])
     app.include_router(agent.router, tags=["Agent"])
@@ -140,6 +181,20 @@ def create_app() -> FastAPI:
     # --------------------------------------------------
     # Health Check Endpoint
     # --------------------------------------------------
+
+    @app.get("/", tags=["Health"])
+    def root() -> dict:
+        """
+        Landing route — points people at the one endpoint that matters.
+
+        Returns:
+            dict: Quick pointers to docs and the public resolve endpoint.
+        """
+        return {
+            "service": "automated-customer-support",
+            "try_it": "POST /resolve  (no login required)",
+            "docs": "/docs",
+        }
 
     @app.get("/health", tags=["Health"])
     def health_check() -> dict:
