@@ -84,6 +84,32 @@ def create_app() -> FastAPI:
         ),
         version="0.1.0",
         lifespan=lifespan,
+        openapi_tags=[
+            {
+                "name": "Tickets",
+                "description": "Create and view support tickets. No login needed to create one.",
+            },
+            {
+                "name": "Feedback",
+                "description": "Rate how well a resolved ticket's answer worked.",
+            },
+            {
+                "name": "Admin",
+                "description": "Admin-only metrics and controls. Requires an admin token.",
+            },
+            {
+                "name": "Authentication",
+                "description": "Register, log in, and manage sessions — only needed for the agent/admin dashboard, not for basic ticket use.",
+            },
+            {
+                "name": "Demo",
+                "description": "Sample data browsing for local development. Disabled in production.",
+            },
+            {
+                "name": "Health",
+                "description": "Service status checks.",
+            },
+        ],
     )
 
     # --------------------------------------------------
@@ -91,18 +117,17 @@ def create_app() -> FastAPI:
     # --------------------------------------------------
 
     # CORS Middleware
-    # allow_origin_regex covers every Vercel preview + production URL for this
-    # project (e.g. srs-frontend-rho.vercel.app, srs-frontend-<hash>-<team>.vercel.app),
-    # since Vercel mints a new unique URL for every deployment.
+    #
+    # Wide open on purpose: this API is designed to be called directly from
+    # other people's frontends (the whole point of POST /resolve is "embed
+    # this in your repo"), and auth here is a Bearer token in the
+    # Authorization header, never a cookie — so allow_credentials=False +
+    # allow_origins=["*"] is safe. If cookie-based auth is ever introduced,
+    # this needs to go back to an explicit origin allowlist.
     app.add_middleware(
         CORSMiddleware,
-        allow_origins=settings.CORS_ORIGINS if settings.CORS_ORIGINS else [
-            "https://srs-frontend-rho.vercel.app",
-            "http://localhost:3000",  # Local development
-            "http://localhost:5173",  # Vite dev server
-        ],
-        allow_origin_regex=r"https://srs-frontend.*\.vercel\.app",
-        allow_credentials=True,
+        allow_origins=settings.CORS_ORIGINS if settings.CORS_ORIGINS else ["*"],
+        allow_credentials=False,
         allow_methods=["*"],
         allow_headers=["*"],
     )
