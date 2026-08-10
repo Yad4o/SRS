@@ -24,7 +24,7 @@ from slowapi import _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
 from app.core.limiter import limiter
 
-from app.api import auth, demo, tickets, feedback, admin, public
+from app.api import auth, demo, tickets, feedback, admin, agent, public
 from app.core.config import settings
 from app.core.error_handlers import setup_exception_handlers
 from app.db.session import engine, init_db
@@ -89,8 +89,16 @@ def create_app() -> FastAPI:
         lifespan=lifespan,
         openapi_tags=[
             {
+                "name": "Public API",
+                "description": "The free, no-login endpoint. Start here.",
+            },
+            {
                 "name": "Tickets",
                 "description": "Create and view support tickets. No login needed to create one.",
+            },
+            {
+                "name": "Agent",
+                "description": "Agent-only ticket queue: claim, work, and close escalated tickets. Requires an agent or admin token.",
             },
             {
                 "name": "Feedback",
@@ -160,6 +168,7 @@ def create_app() -> FastAPI:
     app.include_router(public.router, tags=["Public API"])
 
     app.include_router(tickets.router, tags=["Tickets"])
+    app.include_router(agent.router, tags=["Agent"])
     app.include_router(feedback.router, tags=["Feedback"])
     app.include_router(admin.router, tags=["Admin"])
     app.include_router(auth.router)

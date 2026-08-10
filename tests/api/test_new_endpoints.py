@@ -6,8 +6,8 @@ Tests for the four endpoints added in fix/missing-endpoints-and-schema:
   Backend fixes:
     1. GET  /admin/agents              — list agent users for assignment modal
     2. POST /admin/tickets/{id}/assign — admin assigns a specific agent
-    3. GET  /tickets/my-assignments    — agent views their assigned tickets
-    4. POST /tickets/{id}/accept       — agent accepts → in_progress transition
+    3. GET  /agent/my-assignments      — agent views their assigned tickets
+    4. POST /agent/tickets/{id}/accept — agent accepts → in_progress transition
 
   Schema fix:
     5. GET  /admin/tickets             — AdminTicketItem now includes
@@ -268,11 +268,11 @@ class TestAdminAssignTicket(BaseTestClass):
 
 
 # ---------------------------------------------------------------------------
-# 3. GET /tickets/my-assignments
+# 3. GET /agent/my-assignments
 # ---------------------------------------------------------------------------
 
 class TestMyAssignments(BaseTestClass):
-    """GET /tickets/my-assignments — agent sees only their own assigned tickets."""
+    """GET /agent/my-assignments — agent sees only their own assigned tickets."""
 
     def test_returns_assigned_tickets(self):
         agent = _make_user("agent_myq@test.com", "agent")
@@ -281,7 +281,7 @@ class TestMyAssignments(BaseTestClass):
         _make_ticket(status="escalated", assigned_agent_id=None)  # unassigned, should be excluded
 
         token = AuthHelper.create_agent_token(str(agent.id))
-        resp = client.get("/tickets/my-assignments", headers={"Authorization": token})
+        resp = client.get("/agent/my-assignments", headers={"Authorization": token})
 
         assert resp.status_code == 200
         data = resp.json()
@@ -296,7 +296,7 @@ class TestMyAssignments(BaseTestClass):
         t_agent2 = _make_ticket(status="escalated", assigned_agent_id=agent2.id)
 
         token = AuthHelper.create_agent_token(str(agent1.id))
-        resp = client.get("/tickets/my-assignments", headers={"Authorization": token})
+        resp = client.get("/agent/my-assignments", headers={"Authorization": token})
 
         ids = {t["id"] for t in resp.json()["tickets"]}
         assert t_agent1.id in ids
@@ -309,7 +309,7 @@ class TestMyAssignments(BaseTestClass):
 
         token = AuthHelper.create_agent_token(str(agent.id))
         resp = client.get(
-            "/tickets/my-assignments?status=escalated",
+            "/agent/my-assignments?status=escalated",
             headers={"Authorization": token},
         )
         ids = {t["id"] for t in resp.json()["tickets"]}
@@ -323,7 +323,7 @@ class TestMyAssignments(BaseTestClass):
 
         token = AuthHelper.create_agent_token(str(agent.id))
         resp = client.get(
-            "/tickets/my-assignments?status=in_progress",
+            "/agent/my-assignments?status=in_progress",
             headers={"Authorization": token},
         )
         ids = {t["id"] for t in resp.json()["tickets"]}
@@ -334,37 +334,37 @@ class TestMyAssignments(BaseTestClass):
         token = AuthHelper.create_agent_token(str(agent.id))
 
         resp = client.get(
-            "/tickets/my-assignments?status=open",
+            "/agent/my-assignments?status=open",
             headers={"Authorization": token},
         )
         assert resp.status_code == 400
 
     def test_requires_authentication(self):
-        resp = client.get("/tickets/my-assignments")
+        resp = client.get("/agent/my-assignments")
         assert resp.status_code == 401
 
     def test_user_role_cannot_access(self):
         user = _make_user("user_myq@test.com", "user")
         token = AuthHelper.create_user_token(str(user.id))
 
-        resp = client.get("/tickets/my-assignments", headers={"Authorization": token})
+        resp = client.get("/agent/my-assignments", headers={"Authorization": token})
         assert resp.status_code == 403
 
     def test_empty_when_no_assignments(self):
         agent = _make_user("agent_empty@test.com", "agent")
         token = AuthHelper.create_agent_token(str(agent.id))
 
-        resp = client.get("/tickets/my-assignments", headers={"Authorization": token})
+        resp = client.get("/agent/my-assignments", headers={"Authorization": token})
         assert resp.status_code == 200
         assert resp.json()["tickets"] == []
 
 
 # ---------------------------------------------------------------------------
-# 4. POST /tickets/{id}/accept
+# 4. POST /agent/tickets/{id}/accept
 # ---------------------------------------------------------------------------
 
 class TestAcceptTicket(BaseTestClass):
-    """POST /tickets/{id}/accept — assigned agent accepts → in_progress."""
+    """POST /agent/tickets/{id}/accept — assigned agent accepts → in_progress."""
 
     def test_successful_accept(self):
         agent = _make_user("agent_accept@test.com", "agent")
@@ -372,7 +372,7 @@ class TestAcceptTicket(BaseTestClass):
 
         token = AuthHelper.create_agent_token(str(agent.id))
         resp = client.post(
-            f"/tickets/{ticket.id}/accept",
+            f"/agent/tickets/{ticket.id}/accept",
             headers={"Authorization": token},
         )
 
@@ -388,7 +388,7 @@ class TestAcceptTicket(BaseTestClass):
 
         token = AuthHelper.create_agent_token(str(agent.id))
         resp = client.post(
-            f"/tickets/{ticket.id}/accept",
+            f"/agent/tickets/{ticket.id}/accept",
             headers={"Authorization": token},
         )
         assert resp.status_code == 200
@@ -401,7 +401,7 @@ class TestAcceptTicket(BaseTestClass):
 
         token = AuthHelper.create_agent_token(str(agent2.id))
         resp = client.post(
-            f"/tickets/{ticket.id}/accept",
+            f"/agent/tickets/{ticket.id}/accept",
             headers={"Authorization": token},
         )
         assert resp.status_code == 403
@@ -412,7 +412,7 @@ class TestAcceptTicket(BaseTestClass):
 
         token = AuthHelper.create_agent_token(str(agent.id))
         resp = client.post(
-            f"/tickets/{ticket.id}/accept",
+            f"/agent/tickets/{ticket.id}/accept",
             headers={"Authorization": token},
         )
         assert resp.status_code == 403
@@ -423,7 +423,7 @@ class TestAcceptTicket(BaseTestClass):
 
         token = AuthHelper.create_agent_token(str(agent.id))
         resp = client.post(
-            f"/tickets/{ticket.id}/accept",
+            f"/agent/tickets/{ticket.id}/accept",
             headers={"Authorization": token},
         )
         assert resp.status_code == 409
@@ -433,7 +433,7 @@ class TestAcceptTicket(BaseTestClass):
         token = AuthHelper.create_agent_token(str(agent.id))
 
         resp = client.post(
-            "/tickets/999999/accept",
+            "/agent/tickets/999999/accept",
             headers={"Authorization": token},
         )
         assert resp.status_code == 404
@@ -444,7 +444,7 @@ class TestAcceptTicket(BaseTestClass):
         token = AuthHelper.create_user_token(str(user.id))
 
         resp = client.post(
-            f"/tickets/{ticket.id}/accept",
+            f"/agent/tickets/{ticket.id}/accept",
             headers={"Authorization": token},
         )
         assert resp.status_code == 403
@@ -455,7 +455,7 @@ class TestAcceptTicket(BaseTestClass):
 
         token = AuthHelper.create_admin_token(str(admin.id))
         resp = client.post(
-            f"/tickets/{ticket.id}/accept",
+            f"/agent/tickets/{ticket.id}/accept",
             headers={"Authorization": token},
         )
         assert resp.status_code == 200
@@ -490,7 +490,7 @@ class TestInProgressStatus(BaseTestClass):
         t = _make_ticket(status="in_progress", assigned_agent_id=agent.id)
 
         token = AuthHelper.create_agent_token(str(agent.id))
-        resp = client.get("/tickets/my-assignments", headers={"Authorization": token})
+        resp = client.get("/agent/my-assignments", headers={"Authorization": token})
 
         ids = {t_["id"] for t_ in resp.json()["tickets"]}
         assert t.id in ids

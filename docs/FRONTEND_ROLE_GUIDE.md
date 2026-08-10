@@ -241,7 +241,7 @@ describe('Role Registration', () => {
 describe('Role Permissions', () => {
   test('agent can access agent endpoints', async () => {
     const agent = await loginAsAgent();
-    const response = await fetch('/tickets/assign', {
+    const response = await fetch('/agent/tickets/assign', {
       headers: { 'Authorization': `Bearer ${agent.token}` }
     });
     expect(response.status).not.toBe(403);

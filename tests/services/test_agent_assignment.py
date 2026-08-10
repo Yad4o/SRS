@@ -107,7 +107,7 @@ def test_agent_can_assign_escalated_ticket(client_with_temp_db):
 
     token = create_access_token(data={"sub": str(agent.id), "role": "agent"})
     response = client.post(
-        f"/tickets/{ticket.id}/assign",
+        f"/agent/tickets/{ticket.id}/assign",
         headers={"Authorization": f"Bearer {token}"},
     )
 
@@ -135,7 +135,7 @@ def test_regular_user_gets_403_when_assigning_ticket(client_with_temp_db):
 
     token = create_access_token(data={"sub": str(user.id), "role": "user"})
     response = client.post(
-        f"/tickets/{ticket.id}/assign",
+        f"/agent/tickets/{ticket.id}/assign",
         headers={"Authorization": f"Bearer {token}"},
     )
 
@@ -175,7 +175,7 @@ def test_assign_non_escalated_ticket_returns_409(client_with_temp_db):
 
     token = create_access_token(data={"sub": str(agent.id), "role": "agent"})
     response = client.post(
-        f"/tickets/{ticket.id}/assign",
+        f"/agent/tickets/{ticket.id}/assign",
         headers={"Authorization": f"Bearer {token}"},
     )
 
@@ -208,7 +208,7 @@ def test_assign_already_assigned_ticket_returns_409(client_with_temp_db):
 
     token = create_access_token(data={"sub": str(agent2.id), "role": "agent"})
     response = client.post(
-        f"/tickets/{ticket.id}/assign",
+        f"/agent/tickets/{ticket.id}/assign",
         headers={"Authorization": f"Bearer {token}"},
     )
 
@@ -239,7 +239,7 @@ def test_assign_idempotent_for_same_agent(client_with_temp_db):
 
     token = create_access_token(data={"sub": str(agent.id), "role": "agent"})
     response = client.post(
-        f"/tickets/{ticket.id}/assign",
+        f"/agent/tickets/{ticket.id}/assign",
         headers={"Authorization": f"Bearer {token}"},
     )
 
@@ -269,7 +269,7 @@ def test_agent_can_close_escalated_ticket(client_with_temp_db):
 
     token = create_access_token(data={"sub": str(agent.id), "role": "agent"})
     response = client.post(
-        f"/tickets/{ticket.id}/close",
+        f"/agent/tickets/{ticket.id}/close",
         headers={"Authorization": f"Bearer {token}"},
     )
 
@@ -303,7 +303,7 @@ def test_close_ticket_has_status_closed_in_response(client_with_temp_db):
 
     token = create_access_token(data={"sub": str(admin.id), "role": "admin"})
     response = client.post(
-        f"/tickets/{ticket_id}/close",
+        f"/agent/tickets/{ticket_id}/close",
         headers={"Authorization": f"Bearer {token}"},
     )
 
@@ -334,7 +334,7 @@ def test_close_already_closed_ticket_is_idempotent(client_with_temp_db):
 
     token = create_access_token(data={"sub": str(agent.id), "role": "agent"})
     response = client.post(
-        f"/tickets/{ticket.id}/close",
+        f"/agent/tickets/{ticket.id}/close",
         headers={"Authorization": f"Bearer {token}"},
     )
 
@@ -360,7 +360,7 @@ def test_regular_user_gets_403_when_closing_ticket(client_with_temp_db):
 
     token = create_access_token(data={"sub": str(user.id), "role": "user"})
     response = client.post(
-        f"/tickets/{ticket.id}/close",
+        f"/agent/tickets/{ticket.id}/close",
         headers={"Authorization": f"Bearer {token}"},
     )
 
