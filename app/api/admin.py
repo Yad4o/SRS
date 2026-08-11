@@ -335,7 +335,7 @@ def admin_assign_ticket(
     """
     Admin-assign a specific agent to an escalated ticket.
 
-    Unlike the agent self-assign endpoint (POST /tickets/{id}/assign),
+    Unlike the agent self-assign endpoint (POST /agent/tickets/{id}/assign),
     this endpoint allows an admin to assign *any* available agent to the
     ticket.  The selected agent_id is supplied in the request body.
 

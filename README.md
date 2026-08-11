@@ -547,15 +547,28 @@ def decide_resolution(confidence: float) -> str:
 | `POST` | `/auth/refresh` | Exchange a refresh token for a new access token (rotates the refresh token) | ❌ |
 | `POST` | `/auth/logout` | Revoke a refresh token | ❌ |
 
+### 🚀 Public Endpoint
+
+| Method | Endpoint | Description | Auth Required |
+|--------|----------|-------------|---------------|
+| `POST` | `/resolve` | Classify + answer a message, no ticket created | ❌ |
+
 ### 🎫 Ticket Endpoints
 
 | Method | Endpoint | Description | Auth Required |
 |--------|----------|-------------|---------------|
-| `POST` | `/tickets` | Create new support ticket | ✅ |
-| `GET` | `/tickets` | List user tickets | ✅ |
+| `POST` | `/tickets` | Create new support ticket | Optional |
+| `GET` | `/tickets` | List tickets (own tickets if authenticated) | Optional |
 | `GET` | `/tickets/{id}` | Get ticket details | ✅ |
-| `POST` | `/tickets/{id}/assign` | Assign escalated ticket to self | Agent/Admin |
-| `POST` | `/tickets/{id}/close` | Close a ticket | Agent/Admin |
+
+### 👤 Agent Endpoints
+
+| Method | Endpoint | Description | Auth Required |
+|--------|----------|-------------|---------------|
+| `GET` | `/agent/my-assignments` | List tickets assigned to the current agent | Agent/Admin |
+| `POST` | `/agent/tickets/{id}/assign` | Assign escalated ticket to self | Agent/Admin |
+| `POST` | `/agent/tickets/{id}/accept` | Accept an assigned ticket (→ in_progress) | Agent/Admin |
+| `POST` | `/agent/tickets/{id}/close` | Close a ticket | Agent/Admin |
 
 ### 👷 Worker Endpoints (non-production only)
 
